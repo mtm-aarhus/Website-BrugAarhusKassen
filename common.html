@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="da" data-bs-theme="auto">
+<head>
+  <script>
+            (function() {
+                // Check system preference
+                const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+                document.documentElement.setAttribute("data-bs-theme", prefersDark ? "dark" : "light");
+            })();
+
+  </script>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>BrugAarhus – {{ page_title }}</title>
+
+  <!-- ---------------- CSS ---------------- -->
+  <link rel="icon" href="{{ url_for('static', filename='favicon-32x32.png') }}" type="image/png">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/css/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-table/bootstrap-table.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
+
+  <style>
+    /* ------------------------------------- */
+    /* Global Layout & Navigation Styling    */
+    /* ------------------------------------- */
+    body { padding: 0; }
+    .navbar-brand img { height: 28px; width: auto; }
+    .navbar-title { font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
+
+    [data-bs-theme="light"] .navbar-title { color: #000; }
+    [data-bs-theme="dark"]  .navbar-title { color: #fff; }
+
+    .right-actions { display:flex; align-items:center; gap:.5rem; margin-left:auto; }
+    .last-sync-label { font-size:.85rem; color:var(--bs-secondary-color); }
+
+    /* Mobile navbar dropdown styling */
+    @media (max-width: 991.98px) {
+      #mainNavbar.navbar-collapse {
+        position: absolute; top:100%; left:0; right:0;
+        background: var(--bs-body-bg);
+        border-top: 1px solid var(--bs-border-color);
+      }
+      .last-sync-label { display:none; }
+    }
+
+    /* ------------------------------------- */
+    /* BootstrapTable Global Styling         */
+    /* ------------------------------------- */
+
+    /* ---------- Bootstrap-table dark fixes ---------- */
+    [data-bs-theme="dark"] .bootstrap-table .fixed-table-container,
+    [data-bs-theme="dark"] .bootstrap-table .fixed-table-body,
+    [data-bs-theme="dark"] .bootstrap-table .fixed-table-loading,
+    [data-bs-theme="dark"] .bootstrap-table .table {
+      background-color: var(--bs-body-bg) !important;
+      color: var(--bs-body-color);
+    }
+
+    [data-bs-theme="dark"] .bootstrap-table .table thead th {
+      background-color: var(--bs-tertiary-bg);
+    }
+
+    [data-bs-theme="dark"] .bootstrap-table .fixed-table-loading {
+      border-color: var(--bs-border-color);
+    }
+
+    .content-wrap { padding: 1rem; }
+
+    /* Prettier JSON cells */
+    pre.json-field {
+      background: var(--bs-tertiary-bg);
+      color: var(--bs-body-color);
+      padding: 0.35rem 0.5rem;
+      border-radius: 0.25rem;
+      white-space: pre-wrap;
+    }
+
+    .content-wrap { padding: 1rem; }
+  </style>
+
+  {% block extra_head %}{% endblock %}
+</head>
+
+<body>
+
+<!-- ------------------------------------- -->
+<!-- Top Navigation                         -->
+<!-- ------------------------------------- -->
+<nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom sticky-top">
+  <div class="container-fluid">
+
+    <!-- Mobile Menu Button -->
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <!-- Collapsible Nav -->
+    <div class="collapse navbar-collapse" id="mainNavbar">
+      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle fw-semibold" href="#" role="button" data-bs-toggle="dropdown">
+            Udeservering
+          </a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item {% if page_title=='applications' %}active{% endif %}" href="{{ url_for('udeservering.udeservering_applications_page') }}"><i class="bi bi-file-earmark-plus me-1"></i>Ansøgninger</a></li>
+            <li><a class="dropdown-item {% if page_title=='Til fakturering' %}active{% endif %}" href="{{ url_for('udeservering.udeservering_tilfakturering_page') }}"><i class="bi bi-send-check me-1"></i>Til fakturering</a></li>
+            <li><a class="dropdown-item {% if page_title=='Faktureret' %}active{% endif %}" href="{{ url_for('udeservering.udeservering_faktureret_page') }}"><i class="bi bi-receipt me-1"></i>Faktureret</a></li>
+            <li><a class="dropdown-item {% if page_title=='Statistik' %}active{% endif %}" href="{{ url_for('udeservering.udeservering_statistik_page') }}"><i class="bi bi-graph-up me-1"></i>Statistik</a></li>
+            <li><hr class="dropdown-divider"></li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Right Actions -->
+    <div class="right-actions">
+      <span class="last-sync-label">
+        Sidst synkroniseret: <span id="lastSyncText">{{ last_sync }}</span>
+      </span>
+      <button id="resetTriggerBtn" class="btn btn-sm btn-primary">
+        <i class="bi bi-arrow-repeat me-1"></i>Synkroniser
+      </button>
+    </div>
+
+    <!-- Logo -->
+    <a class="navbar-brand ms-auto" href="{{ url_for('udeservering.udeservering_applications_page') }}">
+      <picture>
+        <source srcset="{{ url_for('static', filename='aak-logo-dark.svg') }}" media="(prefers-color-scheme: dark)">
+        <img src="{{ url_for('static', filename='aak-logo.svg') }}" alt="AAK Logo">
+      </picture>
+    </a>
+  </div>
+</nav>
+
+<!-- ------------------------------------- -->
+<!-- Main Page Content                      -->
+<!-- ------------------------------------- -->
+<div class="content-wrap">
+  {% block content %}{% endblock %}
+</div>
+
+<!-- ------------------------------------- -->
+<!-- JS Includes                            -->
+<!-- ------------------------------------- -->
+<script src="{{ url_for('static', filename='vendor/jquery/jquery.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/bootstrap-table/bootstrap-table.min.js') }}"></script>
+
+<script>
+    (function() {
+      const mql = window.matchMedia('(prefers-color-scheme: dark)');
+      const apply = () => document.documentElement.setAttribute('data-bs-theme', mql.matches ? 'dark' : 'light');
+      apply();
+      mql.addEventListener('change', apply);
+    })();
+
+  /* ---------------------------
+     Bootstrap-Table Locale (DK)
+     --------------------------- */
+
+    $.extend($.fn.bootstrapTable.defaults, {
+        formatAllRows: function () { return 'Alle'; },
+        formatLoadingMessage: function () { return 'Indlæser, vent venligst...'; },
+        formatSearch: function () { return 'Søg'; },
+        formatShowingRows: function (pageFrom, pageTo, totalRows, totalNotFiltered) {
+          return 'Viser ' + pageFrom + ' til ' + pageTo + ' ud af ' + totalRows + ' linjer.';
+        },
+        formatRecordsPerPage: function (pageNumber) { return pageNumber + '&nbsp; pr. side'; },
+        formatNoMatches: function () { return 'Ingen fakturalinjer fundet'; }
+    });
+  </script>
+  <script>
+
+
+  function arealFormatter(value) {
+    if (!value) return ""; return value + " m²";
+  }
+
+  function facadeFormatter(value) {
+    if (!value) return ""; return value + " m";
+  }
+
+  function monthFormatter(value) {
+    if (!value) return '';
+    try {
+      const arr = JSON.parse(value);
+      return Array.isArray(arr) ? arr.join(', ') : value;
+    } catch { return value; }
+  }
+
+  function linkFormatter(value, row) {
+    if (!row || !row.Id) return '';
+    return `<a href="https://ans.brugaarhus.dk/app#/t/ticket/${row.Id}" target="_blank">${row.Id}</a>`;
+  }
+
+  function dateFormatter(value) {
+      if (!value) return "";
+      try {
+          const d = new Date(value);
+          const day = String(d.getDate()).padStart(2, "0");
+          const month = String(d.getMonth() + 1).padStart(2, "0");
+          const year = d.getFullYear();
+          return `${day}-${month}-${year}`;
+      } catch {
+          return value;
+      }
+  }
+
+</script>
+
+{% block extra_js %}{% endblock %}
+</body>
+</html>

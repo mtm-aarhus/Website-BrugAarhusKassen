@@ -1,0 +1,88 @@
+{% extends "common.html" %}
+{% block content %}
+<div class="container-fluid">
+
+  <div class="row mb-3">
+    <div class="col-12 col-md-6">
+      <div class="card h-100">
+        <div class="card-body">
+          <h5 class="card-title mb-3"><i class="bi bi-graph-up"></i> Statistik over fakturastatus</h5>
+          <div id="statusCounts" class="small text-secondary">
+            Indlæser statistik...
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6">
+      <div class="card h-100">
+        <div class="card-body">
+          <h5 class="card-title mb-3"><i class="bi bi-bar-chart"></i> Samlet oversigt</h5>
+          <div id="totalCounts" class="small text-secondary">
+            Indlæser totaler...
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table id="statistik-table"
+           class="table table-striped table-hover align-middle"
+           data-toggle="table"
+           data-pagination="true"
+           data-search="true"
+           data-url="{{ url_for('udeservering.api_udeservering_statistik_table') }}"
+           data-page-size="25"
+           data-unique-id="Id">
+      <thead>
+        <tr>
+          <th data-field="Id" data-formatter="linkFormatter">ID</th>
+          <th data-field="Firmanavn">Firma</th>
+          <th data-field="Adresse">Adresse</th>
+          <th data-field="CVR">CVR</th>
+          <th data-field="Serveringszone">Zone</th>
+          <th data-field="Lokation">Lokation</th>
+          <th data-field="Serveringsareal" data-formatter="arealFormatter">Areal</th>
+          <th data-field="Facadelaengde" data-formatter="facadeFormatter">Facadelængde</th>
+          <th data-field="Maaneder" data-formatter="monthFormatter">Måneder</th>
+          <th data-field="FakturaStatus">Fakturastatus</th>
+        </tr>
+      </thead>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  // Fetch metrics summary (status counts and totals)
+  fetch("{{ url_for('udeservering.api_udeservering_statistik_metrics') }}")
+    .then(r => r.json())
+    .then(data => {
+      const s = data.status || {};
+      const t = data.totals || {};
+
+      const statusHTML = `
+        <ul class="list-unstyled mb-0">
+          <li>🟢 <strong>Ny:</strong> ${s.Ny || 0}</li>
+          <li>🟠 <strong>Til fakturering:</strong> ${s.TilFakturering || 0}</li>
+          <li>🔵 <strong>Faktureret:</strong> ${s.Faktureret || 0}</li>
+          <li>🔴 <strong>Fakturer ikke:</strong> ${s.FakturerIkke || 0}</li>
+        </ul>`;
+      const totalsHTML = `
+        <ul class="list-unstyled mb-0">
+          <li><strong>Antal linjer:</strong> ${t.rows || 0}</li>
+          <li><strong>Unikke firmaer:</strong> ${t.firms || 0}</li>
+        </ul>`;
+
+      document.getElementById("statusCounts").innerHTML = statusHTML;
+      document.getElementById("totalCounts").innerHTML = totalsHTML;
+    })
+    .catch(() => {
+      document.getElementById("statusCounts").innerText = "Kunne ikke hente statistik.";
+      document.getElementById("totalCounts").innerText = "Kunne ikke hente totaler.";
+    });
+});
+</script>
+{% endblock %}
