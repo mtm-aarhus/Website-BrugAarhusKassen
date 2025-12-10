@@ -109,6 +109,8 @@ window.editEvents = {
 
         document.getElementById("edit-Lokation").value = d.Lokation;
         document.getElementById("edit-Periode").value = `${d.FakturaMaaned} ${d.FakturaAar}`;
+        document.getElementById("edit-Year").value = d.FakturaAar;
+
         document.getElementById("edit-Serveringszone").value = d.Serveringszone;
         document.getElementById("edit-Adresse").value = d.Adresse;
         document.getElementById("edit-Firmanavn").value = d.Firmanavn ?? "";
@@ -184,6 +186,7 @@ function saveUpdate({ action }) {
     Lokation: document.getElementById("edit-Lokation").value,
     Pris: document.getElementById("edit-Pris").value,
     Kommentar: document.getElementById("edit-Kommentar").value,
+    Year: document.getElementById("edit-Year").value,
     Action: action
   };
 
@@ -286,12 +289,19 @@ document.getElementById("btnBulkReset").addEventListener("click", () => {
 // Pris auto calculator
 // ------------------------------------------
 async function updateModalPrice() {
+
+    const periode = document.getElementById("edit-Periode").value;
+    const year = parseInt(periode.split(" ")[1]);  // extract year (e.g. "Maj 2025")
+
+    document.getElementById("edit-Year").value = year;
+
     const payload = {
         Zone: document.getElementById("edit-Serveringszone").value,
         Lokation: document.getElementById("edit-Lokation").value,
         Serveringsareal: document.getElementById("edit-Serveringsareal").value,
         Facadelaengde: document.getElementById("edit-Facadelaengde").value,
-        Month: extractMonthNumber(document.getElementById("edit-Periode").value)
+        Month: extractMonthNumber(periode),
+        Year: year                       // NEW 🔥
     };
 
     const response = await fetch("/udeservering/api/beregn_pris", {
@@ -304,7 +314,6 @@ async function updateModalPrice() {
     if (!json.success) return;
 
     const d = json.data;
-
     document.getElementById("edit-Pris").value = d.belob;
 }
 

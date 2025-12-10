@@ -38,39 +38,51 @@ udeservering_bp = Blueprint("udeservering", __name__, template_folder="templates
 def get_engine():
     return current_app.config["ENGINE"]
 
-@lru_cache(maxsize=1)
-def load_prisdata():
+@lru_cache(maxsize=100)
+def load_prisdata_for_year(year: int):
     engine = get_engine()
 
     with engine.begin() as conn:
-        # Load parameters
-        params = conn.execute(text("""
-            SELECT Noegle, VaerdiDecimal, VaerdiTekst
-            FROM BrugAarhus_Udeservering_Parametre
-        """)).mappings().all()
 
-        # Load takster
-        takster = conn.execute(text("""
-            SELECT ZoneKode,
-                   SommerPrisPrM2,
-                   VinterPrisPrM2,
-                   PSPElment,
-                   MaterialeNr
-            FROM BrugAarhus_Udeservering_Takster
-        """)).mappings().all()
+        # PARAMETRE
+        params = {
+            r["Noegle"]: (r["VaerdiDecimal"] if r["VaerdiDecimal"] is not None else r["VaerdiTekst"])
+            for r in conn.execute(text("""
+                SELECT Noegle, VaerdiDecimal, VaerdiTekst
+                FROM BrugAarhus_Udeservering_Parametre
+                WHERE [Year] = :y
+            """), {"y": year}).mappings().all()
+        }
 
-        # Load season
-        saeson = conn.execute(text("""
-            SELECT MaanedNr, Saeson
-            FROM BrugAarhus_Udeservering_Saeson
-        """)).mappings().all()
+        # TAKSTER (keyed by uppercase ZoneKode)
+        takster = {
+            r["ZoneKode"].upper(): dict(r)
+            for r in conn.execute(text("""
+                SELECT ZoneKode,
+                       SommerPrisPrM2,
+                       VinterPrisPrM2,
+                       PSPElment,
+                       MaterialeNr
+                FROM BrugAarhus_Udeservering_Takster
+                WHERE [Year] = :y
+            """), {"y": year}).mappings().all()
+        }
+
+        # SÆSON (month → "Sommer"/"Vinter")
+        saeson = {
+            r["MaanedNr"]: r["Saeson"]
+            for r in conn.execute(text("""
+                SELECT MaanedNr, Saeson
+                FROM BrugAarhus_Udeservering_Saeson
+                WHERE [Year] = :y
+            """), {"y": year}).mappings().all()
+        }
 
     return {
-        "params": {p["Noegle"]: p["VaerdiDecimal"] for p in params},
-        "takster": {t["ZoneKode"].upper(): dict(t) for t in takster},
-        "saeson": {s["MaanedNr"]: s["Saeson"] for s in saeson}
+        "params": params,
+        "takster": takster,
+        "saeson": saeson
     }
-
 
 # --------------------
 # Page routes
@@ -294,7 +306,7 @@ def api_fakturering():
 
 
             # Calculate price
-            calc = beregn_pris(zone, lokation, areal, facade, month_num)
+            calc = beregn_pris(zone, lokation, areal, facade, month_num, r["FakturaAar"])
 
             if calc["ok"]:
                 r["Pris"] = calc["belob"]
@@ -372,40 +384,59 @@ def api_fakturering_bulk_godkend():
 
     with engine.begin() as conn:
 
-        # Fetch all rows first
+        # ---------------------------------------------
+        # Load rows as MUTABLE dicts
+        # ---------------------------------------------
         placeholders = ", ".join(f":id{i}" for i in range(len(ids)))
         params = {f"id{i}": idv for i, idv in enumerate(ids)}
 
-        rows = conn.execute(text(f"""
-            SELECT *
-            FROM BrugAarhus_Udeservering_Fakturalinjer
-            WHERE FakturaLinjeID IN ({placeholders})
-        """), params).mappings().all()
+        rows = [
+            dict(r) for r in conn.execute(text(f"""
+                SELECT *
+                FROM BrugAarhus_Udeservering_Fakturalinjer
+                WHERE FakturaLinjeID IN ({placeholders})
+            """), params).mappings().all()
+        ]
 
-        # Calculate price per row
-        for r in rows:
-            status = r["FakturaStatus"]
+        # ---------------------------------------------
+        # Process and calculate price
+        # ---------------------------------------------
+        for row in rows:
+            status = row["FakturaStatus"]
 
-            # Skip recalculation for approved or completed rows
+            # Skip if already approved or invoiced
             if status in ("Faktureret", "TilFakturering"):
                 continue
 
-            # Extract fields
-            zone = r["Serveringszone"]
-            lokation = r["Lokation"]
-            areal = float(r["Serveringsareal"] or 0)
-            facade = float(r["Facadelaengde"] or 0)
+            zone = row["Serveringszone"]
+            lokation = row["Lokation"]
+            areal = float(row["Serveringsareal"] or 0)
+            facade = float(row["Facadelaengde"] or 0)
 
-            # Extract month fast
-            month_name = r["FakturaMaaned"].split(" ")[0]
+            # Month → number
+            month_name = row["FakturaMaaned"].split(" ")[0]
             month_num = MONTH_NAME_TO_NUM.get(month_name, 0)
 
-            # Calculate price
-            calc = beregn_pris(zone, lokation, areal, facade, month_num)
-            r["Pris"] = calc["belob"] if calc["ok"] else None
+            # NEW (YEAR support)
+            year = int(row["FakturaAar"])
 
-        # rows is already the final list
-        return jsonify({"total": total, "rows": rows})
+            # Updated yearly price lookup
+            calc = beregn_pris(zone, lokation, areal, facade, month_num, year)
+
+            pris = calc["belob"] if calc.get("ok") else None
+
+            # Update DB
+            conn.execute(text("""
+                UPDATE BrugAarhus_Udeservering_Fakturalinjer
+                SET Pris = :pris,
+                    FakturaStatus = 'TilFakturering'
+                WHERE FakturaLinjeID = :id
+            """), {"pris": pris, "id": row["FakturaLinjeID"]})
+
+        # ---------------------------------------------
+        # Done
+        # ---------------------------------------------
+        return jsonify({"success": True})
 
 
 
@@ -509,12 +540,28 @@ def api_fakturering_update():
 @udeservering_bp.route("/api/parametre")
 def api_parametre_list():
     engine = get_engine()
+    year = request.args.get("year", type=int)
+
     with engine.begin() as conn:
+
+        # If UI requests only the list of available years
+        if request.args.get("years_only"):
+            years = conn.execute(text("""
+                SELECT DISTINCT [Year] 
+                FROM BrugAarhus_Udeservering_Parametre
+                ORDER BY [Year]
+            """)).fetchall()
+            return jsonify({"years": [y[0] for y in years]})
+
+        if not year:
+            year = datetime.date.today().year
+
         rows = conn.execute(text("""
-            SELECT Noegle, VaerdiDecimal, VaerdiTekst
+            SELECT Noegle, VaerdiDecimal, VaerdiTekst, [Year]
             FROM BrugAarhus_Udeservering_Parametre
+            WHERE [Year] = :year
             ORDER BY Noegle
-        """)).mappings().all()
+        """), {"year": year}).mappings().all()
 
     return jsonify({"rows": [dict(r) for r in rows]})
 
@@ -522,8 +569,8 @@ def api_parametre_list():
 @udeservering_bp.route("/api/parametre/update", methods=["POST"])
 def api_parametre_update():
     data = request.get_json() or {}
-
     rows = data.get("rows", [])
+
     engine = get_engine()
 
     with engine.begin() as conn:
@@ -531,15 +578,22 @@ def api_parametre_update():
             conn.execute(text("""
                 UPDATE BrugAarhus_Udeservering_Parametre
                 SET VaerdiDecimal = :VaerdiDecimal,
-                    VaerdiTekst = :VaerdiTekst
+                    VaerdiTekst   = :VaerdiTekst
                 WHERE Noegle = :Noegle
+                  AND [Year] = :Year
             """), r)
-    load_prisdata.cache_clear()
+
+    load_prisdata_for_year.cache_clear()
     return jsonify({"success": True})
 
 @udeservering_bp.route("/api/takster")
 def api_takster():
     engine = get_engine()
+    year = request.args.get("year", type=int)
+
+    if not year:
+        year = datetime.date.today().year
+
     with engine.begin() as conn:
         rows = conn.execute(text("""
             SELECT Id,
@@ -548,10 +602,12 @@ def api_takster():
                    PSPElment,
                    MaterialeNr,
                    SommerPrisPrM2,
-                   VinterPrisPrM2
+                   VinterPrisPrM2,
+                   [Year]
             FROM BrugAarhus_Udeservering_Takster
+            WHERE [Year] = :year
             ORDER BY ZoneKode
-        """)).mappings().all()
+        """), {"year": year}).mappings().all()
 
     return jsonify({"rows": [dict(r) for r in rows]})
 
@@ -559,6 +615,8 @@ def api_takster():
 def api_takster_update(id):
     data = request.get_json() or {}
     engine = get_engine()
+
+    data["Id"] = id
 
     sql = text("""
         UPDATE BrugAarhus_Udeservering_Takster
@@ -568,47 +626,54 @@ def api_takster_update(id):
             MaterialeNr     = :MaterialeNr,
             SommerPrisPrM2  = :SommerPrisPrM2,
             VinterPrisPrM2  = :VinterPrisPrM2
-        WHERE Id = :Id
+        WHERE Id    = :Id
+          AND [Year] = :Year
     """)
-
-    data["Id"] = id
 
     with engine.begin() as conn:
         conn.execute(sql, data)
 
-    load_prisdata.cache_clear()
-
+    load_prisdata_for_year.cache_clear()
     return jsonify({"success": True})
-
 
 @udeservering_bp.route("/api/saeson")
 def api_saeson():
     engine = get_engine()
+    year = request.args.get("year", type=int)
+
+    if not year:
+        year = datetime.date.today().year
+
     with engine.begin() as conn:
         rows = conn.execute(text("""
-            SELECT Id, MaanedNr, Maanedsnavn, Saeson
+            SELECT Id, MaanedNr, Maanedsnavn, Saeson, [Year]
             FROM BrugAarhus_Udeservering_Saeson
+            WHERE [Year] = :year
             ORDER BY MaanedNr
-        """)).mappings().all()
+        """), {"year": year}).mappings().all()
+
     return jsonify({"rows": [dict(r) for r in rows]})
 
 
 @udeservering_bp.route("/api/saeson/update/<int:id>", methods=["POST"])
 def api_saeson_update(id):
     data = request.get_json() or {}
+    data["Id"] = id
+
     sql = text("""
         UPDATE BrugAarhus_Udeservering_Saeson
-        SET MaanedNr = :MaanedNr,
+        SET MaanedNr    = :MaanedNr,
             Maanedsnavn = :Maanedsnavn,
-            Saeson = :Saeson
-        WHERE Id = :Id
+            Saeson      = :Saeson
+        WHERE Id    = :Id
+          AND [Year] = :Year
     """)
-    data["Id"] = id
+
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(sql, data)
-    load_prisdata.cache_clear()
 
+    load_prisdata_for_year.cache_clear()
     return jsonify({"success": True})
 
 
@@ -631,35 +696,35 @@ def month_from_name(name: str) -> int:
     }
     return months.get(name, 0)
 
-def beregn_pris(zone, lokation, serveringsareal, facadelaengde, month):
-    data = load_prisdata()
+def beregn_pris(zone, lokation, serveringsareal, facadelaengde, month, year):
+    data = load_prisdata_for_year(year)
 
     params = data["params"]
     takster = data["takster"]
     saeson_map = data["saeson"]
 
-    # Get season
+    # Season (Sommer/Vinter)
     saeson = saeson_map.get(month)
     sommer = (saeson == "Sommer")
 
-    # Get takst
-    t = takster.get((zone).upper())
+    # Zone must be upper-case since takster dict uses uppercase keys
+    t = takster.get((zone or "").upper())
     if not t:
-        return {"ok": False, "error": "Zone-takst ikke fundet."}
+        return {"ok": False, "error": f"Zone-takst ikke fundet for zone '{zone}'."}
 
     pris_pr_m2 = float(t["SommerPrisPrM2"] if sommer else t["VinterPrisPrM2"])
 
-    # Parameters
+    # Parameters (with fallbacks)
     facadebredde = float(params.get("Facadebredde i meter", 0.8))
     min_areal = float(params.get("Minimums opkrævningsareal", 1.0))
     min_belob = float(params.get("Minimums opkrævningsbeløb", 250.0))
 
-    # Minimum areal
-    brutto = max(serveringsareal, min_areal)
+    # Minimum area
+    brutto = max(float(serveringsareal or 0), min_areal)
 
     # Facadefradrag
     if lokation == "Ved facade":
-        netto = max(brutto - facadelaengde * facadebredde, 0)
+        netto = max(brutto - float(facadelaengde or 0) * facadebredde, 0)
     else:
         netto = brutto
 
@@ -679,20 +744,19 @@ def beregn_pris(zone, lokation, serveringsareal, facadelaengde, month):
 
 @udeservering_bp.route("/api/beregn_pris", methods=["POST"])
 def api_beregn_pris():
-    data = request.get_json()
+    data = request.get_json() or {}
 
     zone = data.get("Zone")
     lokation = data.get("Lokation")
     areal = float(data.get("Serveringsareal") or 0)
     facade = float(data.get("Facadelaengde") or 0)
     month = int(data.get("Month") or 0)
+    year = int(data.get("Year") or datetime.date.today().year)
 
-    result = beregn_pris(zone, lokation, areal, facade, month)
+    result = beregn_pris(zone, lokation, areal, facade, month, year)
 
-    if not result["ok"]:
-        return jsonify({"success": False, "error": result["error"]})
+    return jsonify({"success": result["ok"], "data": result})
 
-    return jsonify({"success": True, "data": result})
 
 
 @udeservering_bp.route("/api/statistik/metrics")
@@ -737,3 +801,44 @@ def api_run_refresh():
 
     r = requests.post(url, json=payload, headers=headers)
     return jsonify({"success": True, "result": r.json()}), r.status_code
+
+@udeservering_bp.route("/api/year/clone", methods=["POST"])
+def api_clone_year():
+    engine = get_engine()
+
+    with engine.begin() as conn:
+        # Determine last year
+        last_year = conn.execute(text("""
+            SELECT MAX([Year]) FROM BrugAarhus_Udeservering_Parametre
+        """)).scalar()
+
+        new_year = last_year + 1
+
+        # Clone parametre
+        conn.execute(text("""
+            INSERT INTO BrugAarhus_Udeservering_Parametre (Noegle, VaerdiDecimal, VaerdiTekst, [Year])
+            SELECT Noegle, VaerdiDecimal, VaerdiTekst, :new_year
+            FROM BrugAarhus_Udeservering_Parametre
+            WHERE [Year] = :last_year
+        """), {"new_year": new_year, "last_year": last_year})
+
+        # Clone takster
+        conn.execute(text("""
+            INSERT INTO BrugAarhus_Udeservering_Takster
+                (ZoneKode, ZoneBeskrivelse, PSPElment, MaterialeNr, SommerPrisPrM2, VinterPrisPrM2, [Year])
+            SELECT ZoneKode, ZoneBeskrivelse, PSPElment, MaterialeNr,
+                   SommerPrisPrM2, VinterPrisPrM2, :new_year
+            FROM BrugAarhus_Udeservering_Takster
+            WHERE [Year] = :last_year
+        """), {"new_year": new_year, "last_year": last_year})
+
+        # Clone saeson
+        conn.execute(text("""
+            INSERT INTO BrugAarhus_Udeservering_Saeson
+                (MaanedNr, Maanedsnavn, Saeson, [Year])
+            SELECT MaanedNr, Maanedsnavn, Saeson, :new_year
+            FROM BrugAarhus_Udeservering_Saeson
+            WHERE [Year] = :last_year
+        """), {"new_year": new_year, "last_year": last_year})
+
+    return jsonify({"success": True, "new_year": new_year})
