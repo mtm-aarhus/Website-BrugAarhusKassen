@@ -2,85 +2,144 @@
 <html lang="da" data-bs-theme="auto">
 <head>
   <script>
-    (function() {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      document.documentElement.setAttribute("data-bs-theme", prefersDark ? "dark" : "light");
-    })();
+            (function() {
+                // Check system preference
+                const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+                document.documentElement.setAttribute("data-bs-theme", prefersDark ? "dark" : "light");
+            })();
+
   </script>
+
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <title>BrugAarhus – {{ page_title }}</title>
 
+  <!-- ---------------- CSS ---------------- -->
   <link rel="icon" href="{{ url_for('static', filename='favicon-32x32.png') }}" type="image/png">
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/css/bootstrap.min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-table/bootstrap-table.min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
 
   <style>
+    /* ------------------------------------- */
+    /* Global Layout & Navigation Styling    */
+    /* ------------------------------------- */
     body { padding: 0; }
     .navbar-brand img { height: 28px; width: auto; }
-    .navbar-title { font-weight: 700; white-space: nowrap; }
+    .navbar-title { font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
+
     [data-bs-theme="light"] .navbar-title { color: #000; }
     [data-bs-theme="dark"]  .navbar-title { color: #fff; }
+
     .right-actions { display:flex; align-items:center; gap:.5rem; margin-left:auto; }
     .last-sync-label { font-size:.85rem; color:var(--bs-secondary-color); }
-    .dropdown-toggle::after { margin-left: .4em; vertical-align: .2em; }
 
-    /* Table formatting */
-    pre.json-field { background: var(--bs-tertiary-bg); color: var(--bs-body-color);
-      padding: .25rem .5rem; border-radius: .25rem; font-size: .85rem; white-space: pre-wrap; margin: 0; }
-    table.table td { vertical-align: middle; }
-    .period-line { margin-bottom: .25rem; }
-    .period-label { font-weight: 600; }
+    /* Mobile navbar dropdown styling */
     @media (max-width: 991.98px) {
       #mainNavbar.navbar-collapse {
-        position: absolute; top:100%; left:0; right:0; background: var(--bs-body-bg);
+        position: absolute; top:100%; left:0; right:0;
+        background: var(--bs-body-bg);
         border-top: 1px solid var(--bs-border-color);
       }
       .last-sync-label { display:none; }
     }
+
+    /* ------------------------------------- */
+    /* BootstrapTable Global Styling         */
+    /* ------------------------------------- */
+
+    /* ---------- Bootstrap-table dark fixes ---------- */
+    [data-bs-theme="dark"] .bootstrap-table .fixed-table-container,
+    [data-bs-theme="dark"] .bootstrap-table .fixed-table-body,
+    [data-bs-theme="dark"] .bootstrap-table .fixed-table-loading,
+    [data-bs-theme="dark"] .bootstrap-table .table {
+      background-color: var(--bs-body-bg) !important;
+      color: var(--bs-body-color);
+    }
+
+    [data-bs-theme="dark"] .bootstrap-table .table thead th {
+      background-color: var(--bs-tertiary-bg);
+    }
+
+    [data-bs-theme="dark"] .bootstrap-table .fixed-table-loading {
+      border-color: var(--bs-border-color);
+    }
+
+    .content-wrap { padding: 1rem; }
+
+    /* Prettier JSON cells */
+    pre.json-field {
+      background: var(--bs-tertiary-bg);
+      color: var(--bs-body-color);
+      padding: 0.35rem 0.5rem;
+      border-radius: 0.25rem;
+      white-space: pre-wrap;
+    }
+
+    .content-wrap { padding: 1rem; }
   </style>
 
   {% block extra_head %}{% endblock %}
 </head>
+
 <body>
 
+<!-- ------------------------------------- -->
+<!-- Top Navigation                         -->
+<!-- ------------------------------------- -->
 <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom sticky-top">
   <div class="container-fluid">
 
+    <!-- Mobile Menu Button -->
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar">
       <span class="navbar-toggler-icon"></span>
     </button>
 
+    <!-- Collapsible Nav -->
     <div class="collapse navbar-collapse" id="mainNavbar">
       <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-        <!-- BrugAarhus master dropdown -->
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle fw-semibold" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+          <a class="nav-link dropdown-toggle fw-semibold" href="#" role="button" data-bs-toggle="dropdown">
             Udeservering
           </a>
           <ul class="dropdown-menu">
-            <!-- Current module: Udeservering -->
-            <li><a class="dropdown-item {% if page_title == 'Ny' %}active{% endif %}" href="{{ url_for('udeservering.udeservering_applications_page') }}"><i class="bi bi-file-earmark-plus me-1"></i>Ansøgninger</a></li>
-            <li><a class="dropdown-item {% if page_title == 'Til fakturering' %}active{% endif %}" href="{{ url_for('udeservering.udeservering_tilfakturering_page') }}"><i class="bi bi-send-check me-1"></i>Til fakturering</a></li>
-            <li><a class="dropdown-item {% if page_title == 'Faktureret' %}active{% endif %}" href="{{ url_for('udeservering.udeservering_faktureret_page') }}"><i class="bi bi-receipt me-1"></i>Faktureret</a></li>
-            <li><a class="dropdown-item {% if page_title == 'Statistik' %}active{% endif %}" href="{{ url_for('udeservering.udeservering_statistik_page') }}"><i class="bi bi-graph-up me-1"></i>Statistik</a></li>
+            <li><a class="dropdown-item {% if page_title=='applications' %}active{% endif %}" href="{{ url_for('udeservering.applications') }}"><i class="bi bi-file-earmark-plus me-1"></i>Ansøgninger</a></li>
+            <li><a class="dropdown-item {% if page_title=='fakturering' %}active{% endif %}" href="{{ url_for('udeservering.fakturering') }}"><i class="bi bi-send-check me-1"></i>Fakturering</a></li>
+            <li><a class="dropdown-item {% if page_title=='FakturerIkke' %}active{% endif %}"
+                  href="{{ url_for('udeservering.fakturer_ikke') }}">
+                  <i class="bi bi-x-circle me-1"></i>Fakturer ikke</a></li>
+
+            <li><a class="dropdown-item {% if page_title=='TilFakturering' %}active{% endif %}"
+                  href="{{ url_for('udeservering.til_fakturering_page') }}">
+                  <i class="bi bi-hourglass-split me-1"></i>Til fakturering</a></li>
+
+            <li><a class="dropdown-item {% if page_title=='Faktureret' %}active{% endif %}"
+                  href="{{ url_for('udeservering.faktureret_page') }}">
+                  <i class="bi bi-check2-circle me-1"></i>Faktureret</a></li>
+            <li><a class="dropdown-item {% if page_title=='Statistik' %}active{% endif %}" href="{{ url_for('udeservering.statistik') }}"><i class="bi bi-graph-up me-1"></i>Statistik</a></li>
+            <li>
+              <a class="dropdown-item {% if page_title=='Parametre' %}active{% endif %}"
+                href="{{ url_for('udeservering.parametre_page') }}">
+                <i class="bi bi-gear me-1"></i>Parametre & takster
+              </a>
+            </li>
+
             <li><hr class="dropdown-divider"></li>
           </ul>
         </li>
       </ul>
     </div>
 
-    <div class="right-actions">
-      <span class="last-sync-label">
-        Sidst synkroniseret: <span id="lastSyncText">{{ last_sync }}</span>
-      </span>
-      <button id="resetTriggerBtn" class="btn btn-sm btn-primary" style="margin-right:15px;" >
+    <!-- Right Actions -->
+    <div class="right-actions" style="margin-right: 10px" >
+      <button id="resetTriggerBtn" class="btn btn-sm btn-primary">
         <i class="bi bi-arrow-repeat me-1"></i>Synkroniser
       </button>
     </div>
 
-    <a class="navbar-brand ms-auto" href="{{ url_for('udeservering.udeservering_applications_page') }}">
+    <!-- Logo -->
+    <a class="navbar-brand ms-auto" href="{{ url_for('udeservering.applications') }}">
       <picture>
         <source srcset="{{ url_for('static', filename='aak-logo-dark.svg') }}" media="(prefers-color-scheme: dark)">
         <img src="{{ url_for('static', filename='aak-logo.svg') }}" alt="AAK Logo">
@@ -89,83 +148,84 @@
   </div>
 </nav>
 
-<div class="content-wrap p-3">
+<!-- ------------------------------------- -->
+<!-- Main Page Content                      -->
+<!-- ------------------------------------- -->
+<div class="content-wrap">
   {% block content %}{% endblock %}
 </div>
 
+<!-- ------------------------------------- -->
+<!-- JS Includes                            -->
+<!-- ------------------------------------- -->
 <script src="{{ url_for('static', filename='vendor/jquery/jquery.min.js') }}"></script>
 <script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
 <script src="{{ url_for('static', filename='vendor/bootstrap-table/bootstrap-table.min.js') }}"></script>
 
 <script>
-  // Theme auto
-  (function() {
-    const mql = window.matchMedia('(prefers-color-scheme: dark)');
-    const apply = () => document.documentElement.setAttribute('data-bs-theme', mql.matches ? 'dark' : 'light');
-    apply(); mql.addEventListener('change', apply);
-  })();
+    (function() {
+      const mql = window.matchMedia('(prefers-color-scheme: dark)');
+      const apply = () => document.documentElement.setAttribute('data-bs-theme', mql.matches ? 'dark' : 'light');
+      apply();
+      mql.addEventListener('change', apply);
+    })();
 
-  // Bootstrap-table locale (da)
-  $.extend($.fn.bootstrapTable.defaults, {
-    formatAllRows: () => 'Alle',
-    formatLoadingMessage: () => 'Indlæser, vent venligst...',
-    formatSearch: () => 'Søg',
-    formatShowingRows: (f,t,total) => `Viser ${f}–${t} af ${total} linjer`,
-    formatRecordsPerPage: (n) => `${n} pr. side`,
-    formatNoMatches: () => 'Ingen linjer fundet'
-  });
+  /* ---------------------------
+     Bootstrap-Table Locale (DK)
+     --------------------------- */
 
-    // Format Areal and Facadelængde fields
+    $.extend($.fn.bootstrapTable.defaults, {
+        formatAllRows: function () { return 'Alle'; },
+        formatLoadingMessage: function () { return 'Indlæser, vent venligst...'; },
+        formatSearch: function () { return 'Søg'; },
+        formatShowingRows: function (pageFrom, pageTo, totalRows, totalNotFiltered) {
+          return 'Viser ' + pageFrom + ' til ' + pageTo + ' ud af ' + totalRows + ' linjer.';
+        },
+        formatRecordsPerPage: function (pageNumber) { return pageNumber + '&nbsp; pr. side'; },
+        formatNoMatches: function () { return 'Ingen rækker'; }
+    });
+  </script>
+  <script>
+
+
   function arealFormatter(value) {
-    if (value === null || value === undefined || value === "") return "";
-    return value + " m²";
+    if (!value) return ""; return value + " m²";
   }
 
   function facadeFormatter(value) {
-    if (value === null || value === undefined || value === "") return "";
-    return value + " m";
+    if (!value) return ""; return value + " m";
   }
 
-
-  // UX: format Maaneder and Perioder prettily
   function monthFormatter(value) {
     if (!value) return '';
     try {
       const arr = JSON.parse(value);
-      if (Array.isArray(arr)) return arr.join(', ');
-      return value;
-    } catch {
-      return value;
-    }
+      return Array.isArray(arr) ? arr.join(', ') : value;
+    } catch { return value; }
   }
 
-  function periodFormatter(value) {
-    if (!value) return '';
-    try {
-      const arr = JSON.parse(value);
-      if (!Array.isArray(arr)) return value;
+function linkFormatter(value, row) {
+  if (!row) return '';
 
-      const labels = ['1.', '2.', '3.', '5.', '6.'];
-      let html = '';
-      arr.forEach((p, i) => {
-        if (p.from && p.to) {
-          const from = new Date(p.from).toLocaleDateString('da-DK');
-          const to = new Date(p.to).toLocaleDateString('da-DK');
-          html += `<div class="period-line"><span class="period-label">${labels[i] || (i+1)+'.'} periode:</span> ${from} → ${to}</div>`;
-        }
-      });
-      return html || '';
-    } catch {
-      return value;
-    }
+  const ticketId = row.DeskproID || row.Id;
+  if (!ticketId) return '';
+
+  return `<a href="https://ans.brugaarhus.dk/app#/t/ticket/${ticketId}" target="_blank">${ticketId}</a>`;
+}
+
+  function dateFormatter(value) {
+      if (!value) return "";
+      try {
+          const d = new Date(value);
+          const day = String(d.getDate()).padStart(2, "0");
+          const month = String(d.getMonth() + 1).padStart(2, "0");
+          const year = d.getFullYear();
+          return `${day}-${month}-${year}`;
+      } catch {
+          return value;
+      }
   }
 
-  // Universal linkFormatter
-  function linkFormatter(value, row) {
-    if (!row || !row.Id) return '';
-    const href = 'https://ans.brugaarhus.dk/app#/t/ticket/' + row.Id;
-    return `<a href="${href}" target="_blank">${row.Id}</a>`;
-  }
 </script>
 
 {% block extra_js %}{% endblock %}

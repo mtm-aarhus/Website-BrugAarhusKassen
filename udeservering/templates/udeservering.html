@@ -9,5 +9,49 @@
 {% endblock %}
 
 {% block extra_js %}
-{# Optional: Add JS only for Udeservering pages #}
+<script>
+
+function getSelectedIdsGeneric(tableId) {
+    const selections = $(tableId).bootstrapTable("getSelections");
+    return selections.map(r => r.FakturaLinjeID);
+}
+
+function bulkUpdateStatus(ids, action, callback) {
+    fetch("/udeservering/api/fakturering/bulk_status", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ ids, Action: action })
+    })
+    .then(r => r.json())
+    .then(j => {
+        if (!j.success) return alert(j.error);
+        callback();
+    });
+}
+
+function bulkDelete(ids, callback) {
+    fetch("/udeservering/api/fakturering/reset_bulk", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ ids })
+    })
+    .then(r => r.json())
+    .then(j => {
+        if (!j.success) return alert(j.error);
+        callback();
+    });
+}
+
+function maanedAarFormatter(value, row) {
+    return `${row.FakturaMaaned} ${row.FakturaAar}`;
+}
+
+document.getElementById("resetTriggerBtn").addEventListener("click", async () => {
+    if (!confirm("Tryk OK for at igangsætte synkronisering. Tager typisk 1-2 minutter, og browseren skal herefter opdateres")) return;
+
+    const r = await fetch("/udeservering/api/run_refresh", { method: "POST" });
+    const j = await r.json();
+});
+
+</script>
 {% endblock %}

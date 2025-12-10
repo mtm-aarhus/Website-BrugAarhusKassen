@@ -1,0 +1,92 @@
+<div class="modal fade" id="faktureringModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title">Redigér fakturalinje</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <form id="editForm" class="row g-3">
+
+          <input type="hidden" id="edit-FakturaLinjeID">
+
+          <!-- READ ONLY --------------------------------------------------------->
+
+          <div class="col-md-2">
+            <label class="form-label">Sag</label>
+            <a id="edit-DeskproLink"
+               class="form-control text-primary text-decoration-underline"
+               style="padding-top:.375rem; padding-bottom:.375rem;"
+               target="_blank"></a>
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Måned</label>
+            <input class="form-control" id="edit-Periode" disabled>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Firmanavn</label>
+            <input class="form-control" id="edit-Firmanavn" disabled>
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">CVR</label>
+            <input class="form-control" id="edit-CVR" disabled>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Adresse</label>
+            <input class="form-control" id="edit-Adresse" disabled>
+          </div>
+
+
+          <div class="col-md-2" id="zone-col">
+            <label class="form-label">Zone</label>
+            <input class="form-control" id="edit-Serveringszone" disabled>
+          </div>
+
+          <div class="col-md-4" id="lokation-col">
+            <label class="form-label">Lokation</label>
+            <input class="form-control" id="edit-Lokation" disabled>
+          </div>
+
+          <!-- EDITABLE ---------------------------------------------------------->
+
+          <div class="col-md-3">
+            <label class="form-label">Serveringsareal (m²)</label>
+            <input type="number" step="0.01" class="form-control" id="edit-Serveringsareal">
+          </div>
+
+          <div class="col-md-3" id="facade-container">
+            <label class="form-label">Facadelaengde (m)</label>
+            <input type="number" step="0.01" class="form-control" id="edit-Facadelaengde">
+          </div>
+
+          <!-- PRIS (read only) -->
+          <div class="col-md-2" id="pris-col">
+            <label class="form-label">Pris (auto)</label>
+            <input class="form-control" id="edit-Pris" readonly>
+          </div>
+
+          
+          <div class="col-md-4" id="kommentar-col">
+            <label class="form-label">Kommentar</label>
+            <textarea class="form-control" id="edit-Kommentar"></textarea>
+          </div>
+
+        </form>
+      </div>
+
+      <div class="modal-footer">
+        <button id="btnResetData" class="btn btn-warning me-auto">Opdater data</button>
+        <button id="btnFakturerIkke" class="btn btn-danger">Fakturer ikke</button>
+        <button id="btnGem" class="btn btn-primary">Gem kladde</button>
+        <button id="btnSendTilFakturering" class="btn btn-success">Godkend</button>
+      </div>
+
+    </div>
+  </div>
+</div>

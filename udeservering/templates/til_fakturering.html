@@ -1,0 +1,61 @@
+{% extends "udeservering.html" %}
+
+{% block content %}
+<h4 class="mb-3">Til Fakturering</h4>
+
+<div id="toolbar" class="d-flex gap-2">
+    <button id="btnBulkFortryd" class="btn btn-warning btn-sm">
+        Fortryd fakturering
+    </button>
+</div>
+
+<div class="table-responsive">
+  <table id="til-fakturering-table"
+    class="table table-striped table-bordered align-middle"
+    data-toggle="table"
+    data-toolbar="#toolbar"
+    data-pagination="true"
+    data-side-pagination="server"
+    data-search="true"
+    data-sort-name="DeskproID"
+    data-sort-order="desc"
+    data-url="{{ url_for('udeservering.api_fakturering') }}?status=TilFakturering"
+    data-page-size="25"
+    data-unique-id="FakturaLinjeID"
+    data-total-field="total"
+    data-data-field="rows">
+    <thead>
+      <tr>
+        <th data-field="state" data-checkbox="true"></th>
+        <th data-field="DeskproID" data-sortable="true" data-formatter="linkFormatter">Sag</th>
+        <th data-field="Firmanavn" data-sortable="true">Firma</th>
+        <th data-field="Adresse" data-sortable="true">Adresse</th>
+        <th data-field="FakturaDatoSort" data-sortable="true" data-formatter="maanedAarFormatter">
+            Måned
+        </th>
+        <th data-field="Facadelaengde" data-sortable="true">Facade (m)</th>
+        <th data-field="Serveringsareal" data-sortable="true">Areal</th>
+        <th data-field="Pris" data-sortable="true">Pris</th>
+
+      </tr>
+    </thead>
+  </table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+
+<script>
+document.getElementById("btnBulkFortryd").addEventListener("click", () => {
+    const ids = getSelectedIdsGeneric("#til-fakturering-table");
+    if (ids.length === 0) return alert("Vælg mindst én linje.");
+
+    if (!confirm("Markér som 'Ny' igen?")) return;
+
+    bulkUpdateStatus(ids, "save", () => {
+        $("#til-fakturering-table").bootstrapTable("refresh");
+    });
+});
+</script>
+{% endblock %}

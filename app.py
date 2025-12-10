@@ -20,7 +20,7 @@ app.register_blueprint(udeservering_bp, url_prefix="/udeservering")
 
 @app.route("/")
 def index():
-    return redirect(url_for("udeservering.udeservering_applications_page"))
+    return redirect(url_for("udeservering.applications"))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5100, debug=True)

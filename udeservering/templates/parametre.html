@@ -1,0 +1,402 @@
+{% extends "udeservering.html" %}
+
+{% block content %}
+<h3 class="mb-4">Parametre & Takster</h3>
+
+<!-- Navigation tabs -->
+<ul class="nav nav-tabs mb-3" id="paramTabs">
+  <li class="nav-item">
+    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-parametre">Parametre</button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-takster">Zonetakster</button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-saeson">Sæson</button>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- ===================== PARAMETRE ===================== -->
+  <div class="tab-pane fade show active" id="tab-parametre">
+    <div class="table-responsive">
+      <table id="parametre-table"
+             class="table table-striped table-bordered align-middle table-hover"
+             data-toggle="table"
+             data-url="{{ url_for('udeservering.api_parametre_list') }}"
+             data-search="true"
+             data-unique-id="Noegle">
+        <thead>
+          <tr>
+            <th data-field="Noegle">Parameter</th>
+            <th data-field="VaerdiDecimal">Værdi</th>
+            <th data-field="VaerdiTekst">Beskrivelse</th>
+            <th data-field="action" data-formatter="paramEditFormatter">Handling</th>
+          </tr>
+        </thead>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===================== TAKSTER ===================== -->
+  <div class="tab-pane fade" id="tab-takster">
+    <div class="table-responsive">
+      <table id="takster-table"
+             class="table table-striped table-bordered align-middle table-hover"
+             data-toggle="table"
+             data-url="{{ url_for('udeservering.api_takster') }}"
+             data-search="true"
+             data-unique-id="Id">
+        <thead>
+        <tr>
+            <th data-field="ZoneKode">Zone</th>
+            <th data-field="ZoneBeskrivelse">Beskrivelse</th>
+            <th data-field="PSPElment">PSP element</th>
+            <th data-field="MaterialeNr">Materiale-nr</th>
+            <th data-field="SommerPrisPrM2">Sommerpris</th>
+            <th data-field="VinterPrisPrM2">Vinterpris</th>
+            <th data-field="action" data-formatter="takstEditFormatter">Handling</th>
+        </tr>
+        </thead>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===================== SÆSON ===================== -->
+  <div class="tab-pane fade" id="tab-saeson">
+    <div class="table-responsive">
+      <table id="saeson-table"
+             class="table table-striped table-bordered align-middle table-hover"
+             data-toggle="table"
+             data-url="{{ url_for('udeservering.api_saeson') }}"
+             data-search="true"
+             data-unique-id="Id">
+        <thead>
+          <tr>
+            <th data-field="MaanedNr">Nr</th>
+            <th data-field="Maanedsnavn">Månedsnavn</th>
+            <th data-field="Saeson">Sæson</th>
+            <th data-field="action" data-formatter="saesonEditFormatter">Handling</th>
+          </tr>
+        </thead>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+
+
+<!-- ================================================================ -->
+<!-- ======================   PARAMETRE MODAL   ====================== -->
+<!-- ================================================================ -->
+<div class="modal fade" id="paramModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title">Rediger parameter</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <form id="paramForm" class="row g-3">
+          <input type="hidden" id="param-Noegle">
+
+          <div class="col-12">
+            <label class="form-label">Værdi (numerisk)</label>
+            <input type="number" step="0.01" class="form-control"
+                   id="param-VaerdiDecimal">
+          </div>
+
+          <div class="col-12">
+            <label class="form-label">Beskrivelse</label>
+            <input type="text" class="form-control"
+                   id="param-VaerdiTekst">
+          </div>
+        </form>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Luk</button>
+        <button class="btn btn-primary" id="saveParamBtn">Gem</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+
+<!-- ================================================================ -->
+<!-- =======================   TAKST MODAL   ========================= -->
+<!-- ================================================================ -->
+<div class="modal fade" id="takstModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title">Rediger zonetakst</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+     <div class="modal-body">
+        <form id="takstForm" class="row g-3">
+            <input type="hidden" id="takst-Id">
+
+            <div class="col-4">
+            <label class="form-label">Zonekode</label>
+            <input type="text" class="form-control" id="takst-ZoneKode">
+            </div>
+
+            <div class="col-8">
+            <label class="form-label">Materiale-nr</label>
+            <input type="text" class="form-control" id="takst-MaterialeNr">
+            </div>
+
+            <div class="col-12">
+            <label class="form-label">PSP element</label>
+            <input type="text" class="form-control" id="takst-PSPElment">
+            </div>
+
+            <div class="col-12">
+            <label class="form-label">Beskrivelse</label>
+            <textarea class="form-control" id="takst-ZoneBeskrivelse"></textarea>
+            </div>
+
+            <div class="col-6">
+            <label class="form-label">Sommerpris (kr/m²)</label>
+            <input type="number" step="0.01" class="form-control" id="takst-SommerPrisPrM2">
+            </div>
+
+            <div class="col-6">
+            <label class="form-label">Vinterpris (kr/m²)</label>
+            <input type="number" step="0.01" class="form-control" id="takst-VinterPrisPrM2">
+            </div>
+        </form>
+        </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Luk</button>
+        <button class="btn btn-primary" id="saveTakstBtn">Gem</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+
+<!-- ================================================================ -->
+<!-- =======================   SÆSON MODAL   ========================= -->
+<!-- ================================================================ -->
+<div class="modal fade" id="saesonModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title">Rediger måned</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <form id="saesonForm" class="row g-3">
+          <input type="hidden" id="saeson-Id">
+
+          <div class="col-4">
+            <label class="form-label">Måned nr.</label>
+            <input type="number" min="1" max="12" class="form-control" id="saeson-MaanedNr">
+          </div>
+
+          <div class="col-8">
+            <label class="form-label">Månedsnavn</label>
+            <input type="text" class="form-control" id="saeson-Maanedsnavn">
+          </div>
+
+          <div class="col-12">
+            <label class="form-label">Sæson</label>
+            <select id="saeson-Saeson" class="form-select">
+              <option value="Sommer">Sommer</option>
+              <option value="Vinter">Vinter</option>
+            </select>
+          </div>
+
+        </form>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Luk</button>
+        <button class="btn btn-primary" id="saveSaesonBtn">Gem</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+
+
+{% block extra_js %}
+{{ super() }}
+
+<script>
+/* ============================================================
+   ACTION BUTTON FORMATTERS
+============================================================ */
+function paramEditFormatter(_, row) {
+    return `<button class="btn btn-sm btn-primary"
+                    onclick="openParamModal('${row.Noegle}')">
+                Rediger
+            </button>`;
+}
+
+function takstEditFormatter(_, row) {
+    return `<button class="btn btn-sm btn-primary"
+                    onclick="openTakstModal(${row.Id})">
+                Rediger
+            </button>`;
+}
+
+function saesonEditFormatter(_, row) {
+    return `<button class="btn btn-sm btn-primary"
+                    onclick="openSaesonModal(${row.Id})">
+                Rediger
+            </button>`;
+}
+
+
+
+/* ============================================================
+   PARAMETRE HANDLING
+============================================================ */
+function openParamModal(noegle) {
+    const row = $("#parametre-table").bootstrapTable("getRowByUniqueId", noegle);
+
+    document.getElementById("param-Noegle").value = row.Noegle;
+    document.getElementById("param-VaerdiDecimal").value = row.VaerdiDecimal ?? '';
+    document.getElementById("param-VaerdiTekst").value = row.VaerdiTekst ?? '';
+
+    new bootstrap.Modal(document.getElementById("paramModal")).show();
+}
+
+document.getElementById("saveParamBtn").addEventListener("click", () => {
+
+    let decimalValue = document.getElementById("param-VaerdiDecimal").value;
+    if (decimalValue && isNaN(decimalValue)) {
+        alert("Den numeriske værdi skal være et tal.");
+        return;
+    }
+
+    const payload = {
+        rows: [{
+            Noegle: document.getElementById("param-Noegle").value,
+            VaerdiDecimal: decimalValue || null,
+            VaerdiTekst: document.getElementById("param-VaerdiTekst").value || null
+        }]
+    };
+
+    fetch("/udeservering/api/parametre/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(j => {
+        if (!j.success) return alert("Fejl ved gem");
+        $("#parametre-table").bootstrapTable("refresh");
+        bootstrap.Modal.getInstance(document.getElementById("paramModal")).hide();
+    });
+});
+
+
+
+/* ============================================================
+   TAKSTER HANDLING
+============================================================ */
+function openTakstModal(id) {
+    const row = $("#takster-table").bootstrapTable("getRowByUniqueId", id);
+
+    document.getElementById("takst-Id").value = row.Id;
+    document.getElementById("takst-ZoneKode").value = row.ZoneKode;
+    document.getElementById("takst-ZoneBeskrivelse").value = row.ZoneBeskrivelse;
+    document.getElementById("takst-PSPElment").value = row.PSPElment ?? '';
+    document.getElementById("takst-MaterialeNr").value = row.MaterialeNr ?? '';
+    document.getElementById("takst-SommerPrisPrM2").value = row.SommerPrisPrM2;
+    document.getElementById("takst-VinterPrisPrM2").value = row.VinterPrisPrM2;
+
+    new bootstrap.Modal(document.getElementById("takstModal")).show();
+}
+
+
+document.getElementById("saveTakstBtn").addEventListener("click", () => {
+    const id = document.getElementById("takst-Id").value;
+
+    const payload = {
+        ZoneKode: document.getElementById("takst-ZoneKode").value,
+        ZoneBeskrivelse: document.getElementById("takst-ZoneBeskrivelse").value,
+        PSPElment: document.getElementById("takst-PSPElment").value,
+        MaterialeNr: document.getElementById("takst-MaterialeNr").value,
+        SommerPrisPrM2: document.getElementById("takst-SommerPrisPrM2").value,
+        VinterPrisPrM2: document.getElementById("takst-VinterPrisPrM2").value
+    };
+
+    fetch(`/udeservering/api/takster/update/${id}`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(j => {
+        if (!j.success) return alert("Fejl ved gem");
+        $("#takster-table").bootstrapTable("refresh");
+        bootstrap.Modal.getInstance(document.getElementById("takstModal")).hide();
+    });
+});
+
+
+
+/* ============================================================
+   SÆSON HANDLING
+============================================================ */
+function openSaesonModal(id) {
+    const row = $("#saeson-table").bootstrapTable("getRowByUniqueId", id);
+
+    document.getElementById("saeson-Id").value = row.Id;
+    document.getElementById("saeson-MaanedNr").value = row.MaanedNr;
+    document.getElementById("saeson-Maanedsnavn").value = row.Maanedsnavn;
+    document.getElementById("saeson-Saeson").value = row.Saeson;
+
+    new bootstrap.Modal(document.getElementById("saesonModal")).show();
+}
+
+document.getElementById("saveSaesonBtn").addEventListener("click", () => {
+    const id = document.getElementById("saeson-Id").value;
+
+    const nr = document.getElementById("saeson-MaanedNr").value;
+    if (nr < 1 || nr > 12) {
+        alert("Månedsnummer skal være mellem 1 og 12.");
+        return;
+    }
+
+    const payload = {
+        MaanedNr: nr,
+        Maanedsnavn: document.getElementById("saeson-Maanedsnavn").value,
+        Saeson: document.getElementById("saeson-Saeson").value
+    };
+
+    fetch(`/udeservering/api/saeson/update/${id}`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(j => {
+        if (!j.success) return alert("Fejl ved gem");
+        $("#saeson-table").bootstrapTable("refresh");
+        bootstrap.Modal.getInstance(document.getElementById("saesonModal")).hide();
+    });
+});
+
+</script>
+{% endblock %}
