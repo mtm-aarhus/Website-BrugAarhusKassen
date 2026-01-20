@@ -20,19 +20,6 @@ MONTH_NAME_TO_NUM = {
 }
 
 
-current_month_num = datetime.date.today().month
-
-# All Danish month names that are >= current month
-future_months = [m for m, num in MONTH_ORDER.items() if num >= current_month_num]
-
-# SQL: (MaanederIndevaerende LIKE '%"Maj"%' OR MaanederIndevaerende LIKE '%"Juni"%')
-future_month_like_sql = " OR ".join(
-    [f"MaanederIndevaerende LIKE '%\"{m}\"%'" for m in future_months]
-)
-
-# For fremtidige år – any non-null OR any containing months
-future_years_like_sql = "MaanederFremtidige IS NOT NULL AND MaanederFremtidige <> ''"
-
 udeservering_bp = Blueprint("udeservering", __name__, template_folder="templates")
 
 def get_engine():
@@ -132,18 +119,33 @@ def api_udeservering_applications():
     search = request.args.get("search", "")
     sort = request.args.get("sort", "Ansogningsdato")
     order = request.args.get("order", "desc")
-    filter_mode = request.args.get("filter", "applications")  # <-- NEW
+    filter_mode = request.args.get("filter", "aktive")  # aktive | inaktive | alle
 
     valid_sort_columns = {
-        "Id","Firmanavn","Adresse","CVR","Serveringszone",
-        "Lokation","Serveringsareal","Facadelaengde",
-        "Periodetype","Ansogningsdato"
+        "Id",
+        "Firmanavn",
+        "Adresse",
+        "CVR",
+        "Geo",
+        "Serveringszone",
+        "Lokation",
+        "Ansogningsdato",
+        "Serveringsareal",
+        "Facadelaengde",
+        "LokationOptionId",
+        "ArealVarierer",
+        "GaeldendeFra",
+        "GaeldendeTilOgMed",
     }
     if sort not in valid_sort_columns:
         sort = "Ansogningsdato"
 
-    search_filter = ""
+    if order.lower() not in ("asc", "desc"):
+        order = "desc"
+
     params = {"limit": limit, "offset": offset}
+
+    search_filter = ""
     if search:
         search_filter = """
             AND (
@@ -156,48 +158,33 @@ def api_udeservering_applications():
         """
         params["search"] = f"%{search}%"
 
-    # ------------------------------
-    # Eligibility SQL block
-    # ------------------------------
-    ELIGIBLE_SQL = f"""
+    # Month-granular "active now" check:
+    # active if:
+    #   GaeldendeFra month <= current month
+    #   AND (GaeldendeTilOgMed is null OR current month <= GaeldendeTilOgMed month)
+    active_expr = """
         (
-            -- Indeværende år
-            (
-                Periodetype = 'Indeværende år'
-                AND ({future_month_like_sql})
-            )
-            OR
-
-            -- Fremtidige år
-            (Periodetype = 'Fremtidige år')
-
-            OR
-
-            -- Indeværende og fremtidige år
-            (
-                Periodetype = 'Indeværende og fremtidige år'
-                AND (
-                    ({future_month_like_sql})
-                    OR ({future_years_like_sql})
-                )
-            )
+            DATEFROMPARTS(YEAR(GaeldendeFra), MONTH(GaeldendeFra), 1)
+            <= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)
         )
-        """
+        AND
+        (
+            GaeldendeTilOgMed IS NULL
+            OR DATEFROMPARTS(YEAR(GaeldendeTilOgMed), MONTH(GaeldendeTilOgMed), 1)
+               >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)
+        )
+    """
 
-
-    # ------------------------------
-    # Dynamic WHERE based on dropdown
-    # ------------------------------
     if filter_mode == "aktive":
-        where_sql = f"WHERE {ELIGIBLE_SQL}"
+        where_sql = f"WHERE {active_expr}"
     elif filter_mode == "inaktive":
-        where_sql = f"WHERE NOT {ELIGIBLE_SQL}"
-    else:  # alle
-        where_sql = ""
+        where_sql = f"WHERE NOT {active_expr}"
+    else:
+        where_sql = "WHERE 1=1"
 
     query = f"""
         SELECT *
-        FROM BrugAarhus_Udeservering
+        FROM dbo.BrugAarhus_Udeservering
         {where_sql}
         {search_filter}
         ORDER BY {sort} {order}
@@ -206,7 +193,7 @@ def api_udeservering_applications():
 
     count_query = f"""
         SELECT COUNT(*) AS cnt
-        FROM BrugAarhus_Udeservering
+        FROM dbo.BrugAarhus_Udeservering
         {where_sql}
         {search_filter}
     """
@@ -216,6 +203,7 @@ def api_udeservering_applications():
         total = conn.execute(text(count_query), params).scalar()
 
     return jsonify({"total": total, "rows": [dict(r) for r in rows]})
+
 
 
 @udeservering_bp.route("/api/fakturering")
@@ -676,17 +664,29 @@ def api_saeson_update(id):
     load_prisdata_for_year.cache_clear()
     return jsonify({"success": True})
 
-
 @udeservering_bp.route("/api/statistik/table")
 def api_udeservering_statistik_table():
     engine = get_engine()
     with engine.begin() as conn:
         rows = conn.execute(text("""
-            SELECT Id, Firmanavn, Adresse, CVR, COALESCE(FakturaStatus, 'Ny') AS FakturaStatus
-            FROM BrugAarhus_Udeservering
+            SELECT
+                Id,
+                Firmanavn,
+                Adresse,
+                CVR,
+                Serveringszone,
+                Lokation,
+                Serveringsareal,
+                Facadelaengde,
+                MaanederJson,
+                GaeldendeFra,
+                GaeldendeTilOgMed
+            FROM dbo.BrugAarhus_Udeservering
             ORDER BY Id DESC
         """)).mappings().all()
+
     return jsonify({"total": len(rows), "rows": [dict(r) for r in rows]})
+
 
 def month_from_name(name: str) -> int:
     months = {

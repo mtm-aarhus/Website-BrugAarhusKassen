@@ -26,22 +26,26 @@
     data-unique-id="Id"
     data-total-field="total"
     data-data-field="rows">
-    <thead>
-      <tr>
-        <th data-field="Id" data-formatter="linkFormatter" data-sortable="true">ID</th>
-        <th data-field="Firmanavn" data-sortable="true">Firmanavn</th>
-        <th data-field="Adresse" data-sortable="true">Adresse</th>
-        <th data-field="CVR" data-sortable="true">CVR</th>
-        <th data-field="Serveringszone" data-sortable="true">Zone</th>
-        <th data-field="Lokation" data-sortable="true">Lokation</th>
-        <th data-field="Serveringsareal" data-sortable="true" data-formatter="arealFormatter">Areal</th>
-        <th data-field="Facadelaengde" data-sortable="true" data-formatter="facadeFormatter">Facade</th>
-        <th data-field="Periodetype" data-sortable="true">Periodetype</th>
-        <th data-field="Ansogningsdato"  data-sortable="true" data-formatter="dateFormatter">Ansøgningsdato</th>
-        <th data-field="MaanederIndevaerende" data-formatter="monthFormatter">Måneder indeværende år</th>
-        <th data-field="MaanederFremtidige" data-formatter="monthFormatter">Måneder fremtidige år</th>
-      </tr>
-    </thead>
+<thead>
+  <tr>
+    <th data-field="Id" data-formatter="linkFormatter" data-sortable="true">ID</th>
+    <th data-field="Firmanavn" data-sortable="true">Firmanavn</th>
+    <th data-field="Adresse" data-sortable="true">Adresse</th>
+    <th data-field="CVR" data-sortable="true">CVR</th>
+    <th data-field="Serveringszone" data-sortable="true">Zone</th>
+    <th data-field="Lokation" data-sortable="true">Lokation</th>
+    <th data-field="Serveringsareal" data-sortable="true" data-formatter="arealFormatter">Areal</th>
+    <th data-field="Facadelaengde" data-sortable="true" data-formatter="facadeFormatter">Facade</th>
+
+    <th data-field="GaeldendeFra" data-sortable="true" data-formatter="dateFormatter">Gældende fra</th>
+    <th data-field="GaeldendeTilOgMed" data-sortable="true" data-formatter="dateFormatter">Gældende til</th>
+
+    <th data-field="MaanederJson" data-formatter="monthsOptionFormatter">Måneder</th>
+
+    <th data-field="ArealVarierer" data-sortable="true" data-formatter="boolFormatter">Areal varierer</th>
+    <th data-field="Ansogningsdato" data-sortable="true" data-formatter="dateFormatter">Ansøgningsdato</th>
+  </tr>
+</thead>
   </table>
 </div>
 {% endblock %}

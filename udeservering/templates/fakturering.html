@@ -301,7 +301,7 @@ async function updateModalPrice() {
         Serveringsareal: document.getElementById("edit-Serveringsareal").value,
         Facadelaengde: document.getElementById("edit-Facadelaengde").value,
         Month: extractMonthNumber(periode),
-        Year: year                       // NEW 🔥
+        Year: year                      
     };
 
     const response = await fetch("/udeservering/api/beregn_pris", {

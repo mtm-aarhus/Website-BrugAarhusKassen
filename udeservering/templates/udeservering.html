@@ -53,5 +53,35 @@ document.getElementById("resetTriggerBtn").addEventListener("click", async () =>
     const j = await r.json();
 });
 
+const MONTH_OPTION_ID_TO_NAME = {
+  1198: "Januar", 1199: "Februar", 1200: "Marts", 1201: "April",
+  1202: "Maj", 1203: "Juni", 1204: "Juli", 1205: "August",
+  1206: "September", 1207: "Oktober", 1208: "November", 1209: "December",
+  1306: "April", 1307: "Maj", 1308: "Juni", 1309: "Juli", 1310: "August"
+};
+
+function monthsOptionFormatter(value) {
+  if (!value) return "";
+  try {
+    const arr = JSON.parse(value);
+    if (!Array.isArray(arr)) return String(value);
+
+    const names = arr.map(x => {
+      const id = parseInt(x, 10);
+      return MONTH_OPTION_ID_TO_NAME[id] || String(x);
+    });
+
+    // de-dupe while preserving order
+    const seen = new Set();
+    return names.filter(n => (seen.has(n) ? false : seen.add(n))).join(", ");
+  } catch {
+    return String(value);
+  }
+}
+
+function boolFormatter(value) {
+  // SQLAlchemy may return true/false, 0/1, or "0"/"1"
+  return (value === true || value === 1 || value === "1") ? "Ja" : "Nej";
+}
 </script>
 {% endblock %}
