@@ -1,15 +1,17 @@
 {% extends "common.html" %}
 
 {% block extra_head %}
-{# Optional: Add CSS only for Udeservering pages #}
 {% endblock %}
 
 {% block content %}
-{# Each child page will override this #}
 {% endblock %}
 
 {% block extra_js %}
 <script>
+/* ============================================================
+   Shared helpers used by all Udeservering pages.
+   Generic formatters live in common.html.
+   ============================================================ */
 
 function getSelectedIdsGeneric(tableId) {
     const selections = $(tableId).bootstrapTable("getSelections");
@@ -24,7 +26,8 @@ function bulkUpdateStatus(ids, action, callback) {
     })
     .then(r => r.json())
     .then(j => {
-        if (!j.success) return alert(j.error);
+        if (!j.success) return baToast(j.error || "Fejl", "danger");
+        baToast(`${ids.length} linje(r) opdateret`, "primary");
         callback();
     });
 }
@@ -37,51 +40,158 @@ function bulkDelete(ids, callback) {
     })
     .then(r => r.json())
     .then(j => {
-        if (!j.success) return alert(j.error);
+        if (!j.success) return baToast(j.error || "Fejl", "danger");
+        baToast(`${ids.length} linje(r) slettet — bliver gendannet ved næste synkronisering`, "primary");
         callback();
     });
 }
 
-function maanedAarFormatter(value, row) {
-    return `${row.FakturaMaaned} ${row.FakturaAar}`;
-}
+/* ============================================================
+   Universal selection guard system.
 
-document.getElementById("resetTriggerBtn").addEventListener("click", async () => {
-    if (!confirm("Tryk OK for at igangsætte synkronisering. Tager typisk 1-2 minutter, og browseren skal herefter opdateres")) return;
+   Each page sets `window.pageGuard = { getIds, clearAll }`.
+   - getIds()    -> array of currently selected line IDs.
+   - clearAll()  -> deselects everything and updates the bulk bar.
 
-    const r = await fetch("/udeservering/api/run_refresh", { method: "POST" });
-    const j = await r.json();
-});
+   The following will all prompt before discarding the selection:
+   - changes to filters/search (via guardedApply() wrapper)
+   - bootstrap-table pagination clicks (capture-phase handler)
+   - bootstrap-table page-size dropdown
+   - internal navigation links (navbar dropdown, brand link, etc.)
+   - tab close / external navigation (beforeunload, native dialog)
+   ============================================================ */
+window.pageGuard = { getIds: () => [], clearAll: () => {} };
 
-const MONTH_OPTION_ID_TO_NAME = {
-  1198: "Januar", 1199: "Februar", 1200: "Marts", 1201: "April",
-  1202: "Maj", 1203: "Juni", 1204: "Juli", 1205: "August",
-  1206: "September", 1207: "Oktober", 1208: "November", 1209: "December",
-  1306: "April", 1307: "Maj", 1308: "Juni", 1309: "Juli", 1310: "August"
+window.guardSelection = async function(opts = {}) {
+    const ids = window.pageGuard.getIds();
+    if (ids.length === 0) return true;
+
+    const {
+        title       = "Markering går tabt",
+        actionLabel = "Fortsæt",
+        message     = `Du har <strong>${ids.length}</strong> linje(r) markeret. Fortsæt alligevel?<br><span class="text-secondary small">Markeringen ryddes.</span>`,
+    } = opts;
+
+    const ok = await baConfirm(message, {
+        title,
+        okLabel: actionLabel,
+        variant: "warning",
+        icon: "bi-exclamation-triangle",
+    });
+    if (ok) window.pageGuard.clearAll();
+    return ok;
 };
 
-function monthsOptionFormatter(value) {
-  if (!value) return "";
-  try {
-    const arr = JSON.parse(value);
-    if (!Array.isArray(arr)) return String(value);
+/* ---------- guarded wrapper for filter changes ----------
+   Usage in a page:
+     const apply = guardedApply(
+       () => doRefresh(),           // commit
+       captureFilters,              // snapshot factory
+       restoreFilters               // restore on cancel
+     );
+   apply() can then replace applyFilters everywhere on the page.
+   ----------------------------------------------------------- */
+window.guardedApply = function(commit, snapshotFn, restoreFn) {
+    let lastSnapshot = snapshotFn ? snapshotFn() : null;
 
-    const names = arr.map(x => {
-      const id = parseInt(x, 10);
-      return MONTH_OPTION_ID_TO_NAME[id] || String(x);
-    });
+    return async function() {
+        const ok = await guardSelection({
+            title: "Skift filter",
+            actionLabel: "Skift filter",
+            message: `Du har <strong>${window.pageGuard.getIds().length}</strong> linje(r) markeret. Skift filter alligevel?<br><span class="text-secondary small">Markeringen ryddes.</span>`,
+        });
+        if (!ok) {
+            if (restoreFn && lastSnapshot) restoreFn(lastSnapshot);
+            return;
+        }
+        await commit();
+        if (snapshotFn) lastSnapshot = snapshotFn();
+    };
+};
 
-    // de-dupe while preserving order
-    const seen = new Set();
-    return names.filter(n => (seen.has(n) ? false : seen.add(n))).join(", ");
-  } catch {
-    return String(value);
-  }
-}
+/* ---------- bootstrap-table pagination guard ---------- */
+window.installPaginationGuard = function(tableSelector, getIdsFallback, onContinue) {
+    let bypass = false;
+    const tableId = tableSelector.replace(/^#/, "");
 
-function boolFormatter(value) {
-  // SQLAlchemy may return true/false, 0/1, or "0"/"1"
-  return (value === true || value === 1 || value === "1") ? "Ja" : "Nej";
-}
+    const isOurPagination = function(e) {
+        const action = e.target.closest(".page-link, .dropdown-item, [data-page]");
+        if (!action) return null;
+        const pagination = action.closest(".fixed-table-pagination");
+        if (!pagination) return null;
+        const wrapper = pagination.closest(".bootstrap-table");
+        if (!wrapper) return null;
+        const tbl = wrapper.querySelector(`table#${CSS.escape(tableId)}`);
+        if (!tbl) return null;
+        return action;
+    };
+
+    const handler = async function (e) {
+        if (bypass) return;
+
+        const action = isOurPagination(e);
+        if (!action) return;
+
+        const ids = (window.pageGuard?.getIds?.() ?? (getIdsFallback ? getIdsFallback() : []));
+        if (ids.length === 0) return;  // nothing to guard
+
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+
+        const ok = await baConfirm(
+            `Du har <strong>${ids.length}</strong> linje(r) markeret. Skift side alligevel?<br><span class="text-secondary small">Markeringen ryddes.</span>`,
+            { title: "Skift side", okLabel: "Skift side", variant: "warning", icon: "bi-exclamation-triangle" }
+        );
+        if (!ok) return;
+
+        if (window.pageGuard?.clearAll) {
+            window.pageGuard.clearAll();
+        } else {
+            $(tableSelector).bootstrapTable("uncheckAll");
+            if (onContinue) onContinue();
+        }
+
+        bypass = true;
+        action.click();
+        bypass = false;
+    };
+
+    // Capture phase: run before bootstrap-table's own bubbling handler.
+    document.addEventListener("click", handler, true);
+};
+
+/* ---------- nav-link guard (internal SPA-ish navigation) ---------- */
+$(document).on("click", "a[href]", async function (e) {
+    const $a = $(this);
+    const href = $a.attr("href");
+    if (!href || href === "#" || href.startsWith("javascript:")) return;
+    if ($a.attr("target") === "_blank") return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+    if ($a.closest(".fixed-table-pagination").length) return;   // pagination handled separately
+    if ($a.hasClass("ba-bulkbar-clear")) return;                  // local "Ryd" link
+    if ($a.hasClass("page-link")) return;                         // safety net
+
+    const ids = window.pageGuard?.getIds?.() ?? [];
+    if (ids.length === 0) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const ok = await baConfirm(
+        `Du har <strong>${ids.length}</strong> linje(r) markeret. Forlad siden alligevel?<br><span class="text-secondary small">Markeringen går tabt.</span>`,
+        { title: "Forlad side", okLabel: "Forlad", variant: "warning", icon: "bi-exclamation-triangle" }
+    );
+    if (ok) window.location.href = href;
+});
+
+/* ---------- beforeunload (browser tab close / refresh / typed URL) ---------- */
+window.addEventListener("beforeunload", function (e) {
+    const ids = window.pageGuard?.getIds?.() ?? [];
+    if (ids.length > 0) {
+        e.preventDefault();
+        e.returnValue = "";
+    }
+});
 </script>
 {% endblock %}

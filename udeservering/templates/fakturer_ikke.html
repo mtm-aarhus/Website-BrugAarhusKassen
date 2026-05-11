@@ -1,55 +1,158 @@
 {% extends "udeservering.html" %}
 
 {% block content %}
-<h4 class="mb-3">Fakturer ikke</h4>
-
-<div id="toolbar" class="d-flex gap-2">
-    <button id="btnBulkOpretIgen" class="btn btn-primary btn-sm">
-        Opret igen
-    </button>
+<div class="ba-page-head">
+  <div>
+    <h1 class="ba-page-title"><i class="bi bi-slash-circle me-2"></i>Fakturer ikke</h1>
+    <p class="ba-page-sub">Linjer der er sat til <em>ikke</em> at blive faktureret. Du kan vælge at oprette dem igen, så de gendannes ved næste synkronisering.</p>
+  </div>
 </div>
 
-<div class="table-responsive">
-  <table id="fakturer-ikke-table"
-    class="table table-striped table-bordered align-middle"
-    data-toggle="table"
-    data-toolbar="#toolbar"
-    data-pagination="true"
-    data-side-pagination="server"
-    data-search="true"
-    data-sort-name="DeskproID"
-    data-sort-order="desc"
-    data-url="{{ url_for('udeservering.api_fakturering') }}?status=FakturerIkke"
-    data-page-size="25"
-    data-unique-id="FakturaLinjeID"
-    data-total-field="total"
-    data-data-field="rows">
-    <thead>
-      <tr>
-        <th data-field="state" data-checkbox="true"></th>
-        <th data-field="DeskproID" data-formatter="linkFormatter" data-sortable="true">Sag</th>
-        <th data-field="Firmanavn" data-sortable="true">Firma</th>
-        <th data-field="Adresse" data-sortable="true">Adresse</th>
-        <th data-field="FakturaDatoSort" data-sortable="true" data-formatter="dateFormatter">Fakturadato</th>
-        <th data-field="Serveringsareal" data-sortable="true">Areal</th>
-        <th data-field="Facadelaengde" data-sortable="true">Facade</th>
-      </tr>
-    </thead>
-  </table>
+<div class="ba-filterbar">
+  <span class="ba-filterbar-label">Søg</span>
+  <input id="filterSearch" type="search" class="form-control form-control-sm"
+         style="width:220px" placeholder="Navn, adresse, CVR…">
+
+  <span class="ba-filterbar-label ms-2">År</span>
+  <select id="filterYear" class="form-select form-select-sm" style="width:110px">
+    <option value="">Alle</option>
+  </select>
+
+  <span class="ba-filterbar-label ms-2">Måned</span>
+  <select id="filterMonth" class="form-select form-select-sm" style="width:130px">
+    <option value="">Alle</option>
+    <option>Januar</option><option>Februar</option><option>Marts</option><option>April</option>
+    <option>Maj</option><option>Juni</option><option>Juli</option><option>August</option>
+    <option>September</option><option>Oktober</option><option>November</option><option>December</option>
+  </select>
+
+  <span class="ba-filterbar-label ms-2">Zone</span>
+  <select id="filterZone" class="form-select form-select-sm" style="width:120px">
+    <option value="">Alle</option>
+  </select>
+
+  <button id="btnClearFilters" type="button" class="btn btn-sm btn-outline-secondary ms-2">
+    <i class="bi bi-x-circle me-1"></i>Nulstil
+  </button>
+</div>
+
+<!-- Floating bulk-action bar -->
+<div id="bulkBar" class="ba-bulkbar">
+  <span class="ba-bulkbar-count"><span id="bulkCount">0</span> linje(r) markeret</span>
+  <button id="btnBulkOpretIgen" class="btn btn-outline-primary btn-sm">
+    <i class="bi bi-arrow-clockwise me-1"></i>Opret igen
+  </button>
+  <a id="btnBulkClear" class="ba-bulkbar-clear" href="#" title="Ryd markering">
+    <i class="bi bi-x-lg"></i>
+  </a>
+</div>
+
+<div class="ba-card">
+  <div class="ba-card-body p-0">
+    <table id="fakturer-ikke-table"
+      class="table align-middle"
+      data-toggle="table"
+      data-pagination="true"
+      data-side-pagination="server"
+      data-sort-name="FakturaDatoSort"
+      data-sort-order="desc"
+      data-url="{{ url_for('udeservering.api_fakturering') }}?status=FakturerIkke"
+      data-page-size="25"
+      data-page-list="[10, 25, 50, 100, All]"
+      data-unique-id="FakturaLinjeID"
+      data-total-field="total"
+      data-data-field="rows">
+      <thead>
+        <tr>
+          <th data-field="state"           data-checkbox="true"></th>
+          <th data-field="DeskproID"       data-sortable="true" data-formatter="linkFormatter">Sag</th>
+          <th data-field="Firmanavn"       data-sortable="true">Firmanavn</th>
+          <th data-field="Adresse"         data-sortable="true">Adresse</th>
+          <th data-field="FakturaDatoSort" data-sortable="true" data-formatter="maanedAarFormatter">Periode</th>
+          <th data-field="Serveringszone" data-sortable="true" data-formatter="zoneFormatter">Zone</th>
+          <th data-field="Lokation"        data-sortable="true" data-formatter="lokationFormatter">Lokation</th>
+          <th data-field="Serveringsareal" data-sortable="true" data-formatter="arealFormatter"  class="text-end">Areal</th>
+          <th data-field="Facadelaengde"   data-sortable="true" data-formatter="facadeFormatter" class="text-end">Facade</th>
+        </tr>
+      </thead>
+    </table>
+  </div>
 </div>
 {% endblock %}
+
 {% block extra_js %}
 {{ super() }}
+
 <script>
-document.getElementById("btnBulkOpretIgen").addEventListener("click", () => {
-    const ids = getSelectedIdsGeneric("#fakturer-ikke-table");
-    if (ids.length === 0) return alert("Vælg mindst én linje.");
+function buildUrl() {
+  const params = new URLSearchParams();
+  params.set("status", "FakturerIkke");
+  const s = $("#filterSearch").val();
+  const y = $("#filterYear").val();
+  const m = $("#filterMonth").val();
+  const z = $("#filterZone").val();
+  if (s) params.set("search", s);
+  if (y) params.set("year", y);
+  if (m) params.set("month", m);
+  if (z) params.set("zone", z);
+  return "{{ url_for('udeservering.api_fakturering') }}?" + params.toString();
+}
 
-    if (!confirm("Slet disse linjer og genskab dem ved næste synkronisering?")) return;
+function applyFilters() {
+  $("#fakturer-ikke-table").bootstrapTable("refresh", { url: buildUrl() });
+}
 
-    bulkDelete(ids, () => {
-        $("#fakturer-ikke-table").bootstrapTable("refresh");
-    });
+$("#filterYear, #filterMonth, #filterZone").on("change", applyFilters);
+
+let searchTimer = null;
+$("#filterSearch").on("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(applyFilters, 350);
+});
+
+$("#btnClearFilters").on("click", () => {
+  $("#filterSearch").val("");
+  $("#filterYear").val("");
+  $("#filterMonth").val("");
+  $("#filterZone").val("");
+  applyFilters();
+});
+
+fetch("/udeservering/api/fakturering/year_options")
+  .then(r => r.json())
+  .then(d => {
+    d.years?.forEach(y => $("#filterYear").append(`<option value="${y}">${y}</option>`));
+    d.zones?.forEach(z => $("#filterZone").append(`<option value="${z}">${z}</option>`));
+  });
+
+function updateBulkBar() {
+  const n = getSelectedIdsGeneric("#fakturer-ikke-table").length;
+  $("#bulkCount").text(n);
+  $("#bulkBar").toggleClass("is-active", n > 0);
+}
+
+$("#fakturer-ikke-table").on(
+  "check.bs.table uncheck.bs.table check-all.bs.table uncheck-all.bs.table load-success.bs.table",
+  updateBulkBar
+);
+
+$("#btnBulkClear").on("click", e => {
+  e.preventDefault();
+  $("#fakturer-ikke-table").bootstrapTable("uncheckAll");
+  updateBulkBar();
+});
+
+installPaginationGuard("#fakturer-ikke-table", () => getSelectedIdsGeneric("#fakturer-ikke-table"), updateBulkBar);
+
+document.getElementById("btnBulkOpretIgen").addEventListener("click", async () => {
+  const ids = getSelectedIdsGeneric("#fakturer-ikke-table");
+  if (ids.length === 0) return baToast("Vælg mindst én linje", "warning");
+  const ok = await baConfirm(
+    `Slet <strong>${ids.length}</strong> linje(r)?<br><span class="text-secondary small">De gendannes som "Til godkendelse" ved næste synkronisering.</span>`,
+    { title: "Opret igen", okLabel: "Opret igen", variant: "primary", icon: "bi-arrow-clockwise" }
+  );
+  if (!ok) return;
+  bulkDelete(ids, () => $("#fakturer-ikke-table").bootstrapTable("refresh"));
 });
 </script>
 {% endblock %}

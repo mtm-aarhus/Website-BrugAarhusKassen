@@ -1,0 +1,680 @@
+{% extends "udeservering.html" %}
+
+{% block content %}
+<div class="ba-page-head">
+  <div>
+    <h1 class="ba-page-title"><i class="bi bi-clipboard-check me-2"></i>Til godkendelse</h1>
+    <p class="ba-page-sub">
+      Fakturalinjer der venter på sagsbehandlers godkendelse. Ændringer i Deskpro slår igennem her ved næste synkronisering.
+      Når du godkender eller marker "fakturer ikke" bliver linjerne låst og opdateres ikke automatisk længere.
+    </p>
+  </div>
+</div>
+
+<!-- KPI cards -->
+<div class="row g-3 mb-3">
+  <div class="col-12 col-md-4">
+    <div class="ba-card ba-card-body ba-kpi">
+      <span class="ba-kpi-label">Linjer</span>
+      <span class="ba-kpi-value ba-num" id="kpiLines">–</span>
+      <span class="ba-kpi-foot">Filtreret antal</span>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="ba-card ba-card-body ba-kpi">
+      <span class="ba-kpi-label">Unikke tilladelser</span>
+      <span class="ba-kpi-value ba-num" id="kpiFirms">–</span>
+      <span class="ba-kpi-foot">DeskproID</span>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="ba-card ba-card-body ba-kpi">
+      <span class="ba-kpi-label">Estimeret beløb</span>
+      <span class="ba-kpi-value ba-num" id="kpiSum">–</span>
+      <span class="ba-kpi-foot">Sum i kr.</span>
+    </div>
+  </div>
+</div>
+
+<!-- Filter bar (search lives here, not in the bootstrap-table toolbar) -->
+<div class="ba-filterbar">
+  <span class="ba-filterbar-label">Søg</span>
+  <input id="filterSearch" type="search" class="form-control form-control-sm"
+         style="width:220px" placeholder="Navn, adresse, CVR…">
+
+  <span class="ba-filterbar-label ms-2">År</span>
+  <select id="filterYear" class="form-select form-select-sm" style="width:110px">
+    <option value="">Alle</option>
+  </select>
+
+  <span class="ba-filterbar-label ms-2">Måned</span>
+  <select id="filterMonth" class="form-select form-select-sm" style="width:130px">
+    <option value="">Alle</option>
+    <option>Januar</option><option>Februar</option><option>Marts</option><option>April</option>
+    <option>Maj</option><option>Juni</option><option>Juli</option><option>August</option>
+    <option>September</option><option>Oktober</option><option>November</option><option>December</option>
+  </select>
+
+  <span class="ba-filterbar-label ms-2">Zone</span>
+  <select id="filterZone" class="form-select form-select-sm" style="width:120px">
+    <option value="">Alle</option>
+  </select>
+
+  <span class="ba-filterbar-label ms-2">Lokation</span>
+  <select id="filterLokation" class="form-select form-select-sm" style="width:240px">
+    <option value="">Alle</option>
+  </select>
+
+  <button id="btnClearFilters" type="button" class="btn btn-sm btn-outline-secondary ms-2">
+    <i class="bi bi-x-circle me-1"></i>Nulstil
+  </button>
+
+  <div class="ba-spacer"></div>
+
+  <span class="ba-filterbar-label">Visning</span>
+  <div class="btn-group btn-group-sm" role="group" id="viewToggle">
+    <input type="radio" class="btn-check" name="vw" id="vwGroup" value="group" checked>
+    <label class="btn btn-outline-secondary" for="vwGroup"><i class="bi bi-collection"></i> Grupper måned</label>
+
+    <input type="radio" class="btn-check" name="vw" id="vwFlat" value="flat">
+    <label class="btn btn-outline-secondary" for="vwFlat"><i class="bi bi-list"></i> Flad</label>
+  </div>
+</div>
+
+<!-- Floating bulk-action bar (appears only when selection > 0) -->
+<div id="bulkBar" class="ba-bulkbar">
+  <span class="ba-bulkbar-count"><span id="bulkCount">0</span> linje(r) markeret</span>
+  <button id="btnBulkGodkend" class="btn btn-success btn-sm">
+    <i class="bi bi-check2-circle me-1"></i>Godkend valgte
+  </button>
+  <button id="btnBulkFakturerIkke" class="btn btn-outline-danger btn-sm">
+    <i class="bi bi-slash-circle me-1"></i>Marker som "fakturer ikke"
+  </button>
+  <a id="btnBulkClear" class="ba-bulkbar-clear" href="#" title="Ryd markering">
+    <i class="bi bi-x-lg"></i>
+  </a>
+</div>
+
+<!-- Flat view (hidden by default) -->
+<div id="flatView" class="ba-card" style="display:none">
+  <div class="ba-card-body p-0">
+    <table id="fakturering-table"
+      class="table align-middle"
+      data-toggle="table"
+      data-pagination="true"
+      data-side-pagination="server"
+      data-sort-name="FakturaDatoSort"
+      data-sort-order="desc"
+      data-url="{{ url_for('udeservering.api_fakturering') }}"
+      data-page-size="25"
+      data-page-list="[10, 25, 50, 100, All]"
+      data-unique-id="FakturaLinjeID"
+      data-total-field="total"
+      data-data-field="rows">
+      <thead>
+        <tr>
+          <th data-field="state"           data-checkbox="true"></th>
+          <th data-field="FakturaLinjeID"  data-formatter="editFormatter" data-events="editEvents" class="text-center">Rediger</th>
+          <th data-field="DeskproID"       data-sortable="true" data-formatter="linkFormatter">Sag</th>
+          <th data-field="Firmanavn"       data-sortable="true">Firmanavn</th>
+          <th data-field="Adresse"         data-sortable="true">Adresse</th>
+          <th data-field="FakturaDatoSort" data-sortable="true" data-formatter="maanedAarFormatter">Periode</th>
+          <th data-field="Serveringszone"  data-sortable="true" data-formatter="zoneFormatter">Zone</th>
+          <th data-field="Lokation"        data-sortable="true" data-formatter="lokationFormatter">Lokation</th>
+          <th data-field="Serveringsareal" data-sortable="true" data-formatter="arealFormatter"  class="text-end">Areal</th>
+          <th data-field="Facadelaengde"   data-sortable="true" data-formatter="facadeFormatter" class="text-end">Facade</th>
+          <th data-field="Pris"            data-sortable="true" data-formatter="priceFormatter"  class="text-end">Pris (auto)</th>
+        </tr>
+      </thead>
+    </table>
+  </div>
+</div>
+
+<!-- Grouped view (default) -->
+<div id="groupView">
+  <div id="groupContainer"></div>
+  <div id="groupPager" class="d-flex justify-content-center align-items-center gap-2 mt-3" style="display:none !important"></div>
+</div>
+
+{% include "fakturering_modal.html" %}
+
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+
+<script>
+const STATUS = "Ny";
+const MONTHS_PER_PAGE = 6;
+let groupedPage = 1;
+let cachedGroups = [];
+
+/* ============================================================
+   Filters / URL
+============================================================ */
+function buildFakturaUrl(extra = {}) {
+  const params = new URLSearchParams();
+  params.set("status", STATUS);
+
+  const s = $("#filterSearch").val();
+  const y = $("#filterYear").val();
+  const m = $("#filterMonth").val();
+  const z = $("#filterZone").val();
+  const l = $("#filterLokation").val();
+
+  if (s) params.set("search", s);
+  if (y) params.set("year", y);
+  if (m) params.set("month", m);
+  if (z) params.set("zone", z);
+  if (l) params.set("lokation", l);
+
+  Object.entries(extra).forEach(([k, v]) => params.set(k, v));
+
+  return "{{ url_for('udeservering.api_fakturering') }}" + "?" + params.toString();
+}
+
+function currentView() {
+  return $("input[name='vw']:checked").val() || "group";
+}
+
+function refreshActiveView() {
+  if (currentView() === "group") {
+    loadGrouped();
+  } else {
+    $("#fakturering-table").bootstrapTable("refresh", { url: buildFakturaUrl() });
+  }
+}
+
+function applyFilters() {
+  $("#fakturering-table").bootstrapTable("refresh", { url: buildFakturaUrl() });
+  if (currentView() === "group") loadGrouped();
+}
+
+$("#filterYear, #filterMonth, #filterZone, #filterLokation").on("change", applyFilters);
+
+// Debounced search
+let searchTimer = null;
+$("#filterSearch").on("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(applyFilters, 350);
+});
+
+$("#btnClearFilters").on("click", () => {
+  $("#filterSearch").val("");
+  $("#filterYear").val("");
+  $("#filterMonth").val("");
+  $("#filterZone").val("");
+  $("#filterLokation").val("");
+  applyFilters();
+});
+
+// Default to current year
+const today = new Date();
+const currentYear = today.getFullYear();
+
+fetch("/udeservering/api/fakturering/year_options")
+  .then(r => r.json())
+  .then(d => {
+    d.years?.forEach(y => $("#filterYear").append(`<option value="${y}">${y}</option>`));
+    d.zones?.forEach(z => $("#filterZone").append(`<option value="${z}">${z}</option>`));
+    d.lokationer?.forEach(l => $("#filterLokation").append(`<option value="${l}">${l}</option>`));
+
+    if (d.years?.includes(currentYear)) {
+      $("#filterYear").val(currentYear);
+    }
+    applyFilters();
+  });
+
+/* ============================================================
+   KPIs / bulk bar
+============================================================ */
+function fmtKr(n) {
+  if (n === null || n === undefined) return "0";
+  return parseFloat(n).toLocaleString("da-DK", { maximumFractionDigits: 0 });
+}
+
+function setSummaryKpis(summary) {
+  if (!summary) return;
+  $("#kpiLines").text(summary.lines);
+  $("#kpiFirms").text(summary.firms);
+  $("#kpiSum").text(fmtKr(summary.sum_pris) + " kr");
+}
+
+function updateBulkBar() {
+  const n = getSelectedIds().length;
+  $("#bulkCount").text(n);
+  $("#bulkBar").toggleClass("is-active", n > 0);
+}
+
+$("#fakturering-table").on("load-success.bs.table", (e, data) => {
+  setSummaryKpis(data?.summary);
+  updateBulkBar();
+});
+$("#fakturering-table").on(
+  "check.bs.table uncheck.bs.table check-all.bs.table uncheck-all.bs.table",
+  updateBulkBar
+);
+
+$("#btnBulkClear").on("click", e => {
+  e.preventDefault();
+  if (currentView() === "group") {
+    $("#groupContainer .row-check, #groupContainer .group-check")
+      .prop("checked", false).prop("indeterminate", false);
+  } else {
+    $("#fakturering-table").bootstrapTable("uncheckAll");
+  }
+  updateBulkBar();
+});
+
+// Flat-view pagination guard: warn before losing selection
+installPaginationGuard("#fakturering-table", () => getSelectedIds(), updateBulkBar);
+
+/* ============================================================
+   View toggle
+============================================================ */
+$("input[name='vw']").on("change", function () {
+  if (this.value === "group") {
+    $("#flatView").hide();
+    $("#groupView").show();
+    loadGrouped();
+  } else {
+    $("#groupView").hide();
+    $("#flatView").show();
+    $("#fakturering-table").bootstrapTable("refresh", { url: buildFakturaUrl() });
+  }
+  updateBulkBar();
+});
+
+/* ============================================================
+   Grouped view — fetches all matching rows, paginates by MONTH.
+============================================================ */
+async function loadGrouped() {
+  $("#groupContainer").html(`<div class="ba-card ba-card-body text-secondary">Indlæser…</div>`);
+  $("#groupPager").hide();
+
+  const r = await fetch(buildFakturaUrl({ limit: 10000, offset: 0 }));
+  const j = await r.json();
+
+  setSummaryKpis(j.summary);
+
+  const rows = j.rows || [];
+  const groups = {};
+  rows.forEach(row => {
+    const key = `${row.FakturaAar}-${String(MONTH_NAME_TO_NUM[row.FakturaMaaned] || 0).padStart(2, "0")}`;
+    const label = `${row.FakturaMaaned} ${row.FakturaAar}`;
+    (groups[key] = groups[key] || { key, label, rows: [] }).rows.push(row);
+  });
+
+  cachedGroups = Object.keys(groups).sort().reverse().map(k => groups[k]);
+  groupedPage = 1;
+  renderGroupedPage();
+}
+
+function renderGroupedPage() {
+  if (cachedGroups.length === 0) {
+    $("#groupContainer").html(`<div class="ba-card ba-card-body text-secondary">Ingen linjer matcher filtrene.</div>`);
+    $("#groupPager").hide();
+    return;
+  }
+
+  const totalPages = Math.max(1, Math.ceil(cachedGroups.length / MONTHS_PER_PAGE));
+  if (groupedPage > totalPages) groupedPage = totalPages;
+
+  const start = (groupedPage - 1) * MONTHS_PER_PAGE;
+  const pageGroups = cachedGroups.slice(start, start + MONTHS_PER_PAGE);
+
+  const html = pageGroups.map(g => {
+    const sum = g.rows.reduce((s, r) => s + (parseFloat(r.Pris) || 0), 0);
+    const rowsHtml = g.rows.map(r => {
+      const cvrOk = !r.CVR ? null : isValidCvr(r.CVR);
+      const lockable = cvrOk === false
+        ? `<span class="ms-1" title="Ugyldigt CVR — kan ikke godkendes"><i class="bi bi-exclamation-triangle-fill text-danger"></i></span>`
+        : "";
+      return `
+      <tr>
+        <td class="text-center">
+          <input type="checkbox" class="form-check-input row-check"
+                 data-id="${r.FakturaLinjeID}" data-group="${g.key}"
+                 data-cvr-ok="${cvrOk === false ? '0' : '1'}">
+        </td>
+        <td class="text-center">${editFormatter("", r)}</td>
+        <td>${linkFormatter("", r)}</td>
+        <td>${r.Firmanavn || ""}${lockable}</td>
+        <td>${r.Adresse || ""}</td>
+        <td>${zoneFormatter(r.Serveringszone)}</td>
+        <td>${lokationFormatter(r.Lokation)}</td>
+        <td class="text-end">${arealFormatter(r.Serveringsareal)}</td>
+        <td class="text-end">${facadeFormatter(r.Facadelaengde)}</td>
+        <td class="text-end">${priceFormatter(r.Pris)}</td>
+      </tr>`;
+    }).join("");
+
+    return `
+      <details class="ba-card mb-2" open>
+        <summary class="ba-card-body d-flex justify-content-between align-items-center" style="cursor:pointer">
+          <span class="d-flex align-items-center">
+            <input type="checkbox" class="form-check-input me-3 group-check" data-group="${g.key}"
+                   onclick="event.stopPropagation()" title="Markér alle i denne måned">
+            <span class="fw-semibold"><i class="bi bi-calendar3 me-2"></i>${g.label}</span>
+          </span>
+          <span class="text-secondary small">
+            <span class="me-3"><strong>${g.rows.length}</strong> linje(r)</span>
+            <span><strong>${fmtKr(sum)}</strong> kr</span>
+          </span>
+        </summary>
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead>
+              <tr>
+                <th style="width:40px"></th>
+                <th class="text-center" style="width:80px">Rediger</th>
+                <th>Sag</th>
+                <th>Firmanavn</th>
+                <th>Adresse</th>
+                <th>Zone</th>
+                <th>Lokation</th>
+                <th class="text-end">Areal</th>
+                <th class="text-end">Facade</th>
+                <th class="text-end">Pris (auto)</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      </details>`;
+  }).join("");
+
+  $("#groupContainer").html(html);
+  $("#groupContainer .edit-btn").on("click", function (e) {
+    e.stopPropagation();
+    openEditModal($(this).data("id"));
+  });
+
+  // Pager
+  if (totalPages > 1) {
+    const showingFrom = start + 1;
+    const showingTo   = Math.min(start + MONTHS_PER_PAGE, cachedGroups.length);
+    $("#groupPager").html(`
+      <button class="btn btn-sm btn-outline-secondary" id="pgPrev" ${groupedPage === 1 ? "disabled" : ""}>
+        <i class="bi bi-chevron-left"></i> Forrige
+      </button>
+      <span class="text-secondary small px-2">
+        Måned ${showingFrom}${showingTo > showingFrom ? "–" + showingTo : ""} af ${cachedGroups.length}
+        &middot; Side <strong>${groupedPage}</strong> af ${totalPages}
+      </span>
+      <button class="btn btn-sm btn-outline-secondary" id="pgNext" ${groupedPage === totalPages ? "disabled" : ""}>
+        Næste <i class="bi bi-chevron-right"></i>
+      </button>
+    `).css("display", "");
+  } else {
+    $("#groupPager").hide();
+  }
+
+  updateBulkBar();
+}
+
+// Grouped pagination buttons (with selection guard)
+async function changeGroupedPage(newPage) {
+  if (newPage === groupedPage) return;
+  const ids = getSelectedIds();
+  if (ids.length > 0) {
+    const ok = await baConfirm(
+      `Du har <strong>${ids.length}</strong> linje(r) markeret. Skift side alligevel?<br><span class="text-secondary small">Markeringen ryddes.</span>`,
+      { title: "Skift side", okLabel: "Skift side", variant: "warning", icon: "bi-exclamation-triangle" }
+    );
+    if (!ok) return;
+  }
+  groupedPage = newPage;
+  renderGroupedPage();
+}
+
+$(document).on("click", "#pgPrev", () => changeGroupedPage(groupedPage - 1));
+$(document).on("click", "#pgNext", () => changeGroupedPage(groupedPage + 1));
+
+/* Checkbox interactions */
+$(document).on("click", "#groupContainer .row-check", e => e.stopPropagation());
+$(document).on("change", "#groupContainer .row-check", function () {
+  const k = $(this).data("group");
+  const all = $(`#groupContainer .row-check[data-group="${k}"]`);
+  const checked = all.filter(":checked");
+  const master = $(`#groupContainer .group-check[data-group="${k}"]`)[0];
+  if (master) {
+    master.checked = (checked.length === all.length);
+    master.indeterminate = (checked.length > 0 && checked.length < all.length);
+  }
+  updateBulkBar();
+});
+$(document).on("change", "#groupContainer .group-check", function () {
+  const k = $(this).data("group");
+  $(`#groupContainer .row-check[data-group="${k}"]`).prop("checked", this.checked);
+  updateBulkBar();
+});
+
+/* ============================================================
+   Edit modal
+============================================================ */
+function editFormatter(value, row) {
+  return `<button class="btn btn-sm btn-outline-primary edit-btn" data-id="${row.FakturaLinjeID}" title="Rediger">
+            <i class="bi bi-pencil"></i>
+          </button>`;
+}
+
+window.editEvents = {
+  "click .edit-btn": function (e, value, row) {
+    openEditModal(row.FakturaLinjeID);
+  }
+};
+
+function openEditModal(id) {
+  fetch(`/udeservering/api/fakturering/${id}`)
+    .then(r => r.json())
+    .then(json => {
+      if (!json.success) return baToast(json.error || "Linje ikke fundet", "danger");
+
+      const d = json.data;
+
+      document.getElementById("edit-FakturaLinjeID").value = d.FakturaLinjeID;
+
+      const deskpro = document.getElementById("edit-DeskproLink");
+      deskpro.textContent = d.DeskproID;
+      deskpro.href = `https://ans.brugaarhus.dk/app#/t/ticket/${d.DeskproID}`;
+
+      document.getElementById("edit-Lokation").value = d.Lokation || "";
+      document.getElementById("edit-Periode").value = `${d.FakturaMaaned} ${d.FakturaAar}`;
+      document.getElementById("edit-Year").value = d.FakturaAar;
+      document.getElementById("edit-Serveringszone").value = d.Serveringszone || "";
+      document.getElementById("edit-Adresse").value = d.Adresse || "";
+      document.getElementById("edit-Firmanavn").value = d.Firmanavn || "";
+      document.getElementById("edit-CVR").value = d.CVR || "";
+
+      const cvrStatus = document.getElementById("edit-CVR-status");
+      const cvrOk = !d.CVR ? null : isValidCvr(d.CVR);
+      if (cvrOk === null) {
+        cvrStatus.innerHTML = `<i class="bi bi-dash text-secondary"></i>`;
+        cvrStatus.title = "Intet CVR angivet";
+      } else if (cvrOk) {
+        cvrStatus.innerHTML = `<i class="bi bi-check-circle-fill text-success"></i>`;
+        cvrStatus.title = "Gyldigt CVR-nummer";
+      } else {
+        cvrStatus.innerHTML = `<i class="bi bi-exclamation-triangle-fill text-danger"></i>`;
+        cvrStatus.title = "Ugyldigt CVR-nummer (mod-11 check fejler)";
+      }
+      const godkendBtn = document.getElementById("btnSendTilFakturering");
+      godkendBtn.disabled = (cvrOk !== true);
+      godkendBtn.title = (cvrOk !== true)
+        ? "CVR mangler eller er ugyldigt — kan ikke godkendes. Ret i Deskpro og synkronisér."
+        : "";
+
+      document.getElementById("edit-Serveringsareal").value = d.Serveringsareal ?? "";
+      document.getElementById("edit-Facadelaengde").value   = d.Facadelaengde ?? "";
+      document.getElementById("edit-Kommentar").value       = d.Kommentar ?? "";
+
+      const showFacade = (d.Lokation === "Ved facade");
+      document.getElementById("facade-container").style.display = showFacade ? "" : "none";
+      if (!showFacade) document.getElementById("edit-Facadelaengde").value = "";
+
+      updateModalPrice();
+      new bootstrap.Modal(document.getElementById("faktureringModal")).show();
+    });
+}
+
+/* ============================================================
+   Modal actions
+============================================================ */
+document.getElementById("btnSendTilFakturering").addEventListener("click", () => saveUpdate({ action: "godkend" }));
+document.getElementById("btnFakturerIkke").addEventListener("click", () => saveUpdate({ action: "ikke" }));
+
+function valOrNull(id) {
+  const v = document.getElementById(id).value;
+  return (v === "" || v === undefined || v === null) ? null : v;
+}
+
+function saveUpdate({ action }) {
+  const payload = {
+    FakturaLinjeID:  document.getElementById("edit-FakturaLinjeID").value,
+    Serveringsareal: valOrNull("edit-Serveringsareal"),
+    Facadelaengde:   valOrNull("edit-Facadelaengde"),
+    Lokation:        document.getElementById("edit-Lokation").value,
+    Pris:            valOrNull("edit-Pris"),
+    Kommentar:       document.getElementById("edit-Kommentar").value,
+    Year:            document.getElementById("edit-Year").value,
+    Action:          action,
+  };
+
+  fetch("/udeservering/api/fakturering/update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json().then(j => ({ status: r.status, body: j })))
+  .then(({ status, body }) => {
+    if (!body.success) return baToast(body.error || "Fejl ved gem", "danger");
+    const msg = action === "godkend"
+      ? "Linje godkendt til fakturering"
+      : "Linje markeret som 'fakturer ikke'";
+    baToast(msg, "primary");
+    refreshActiveView();
+    bootstrap.Modal.getInstance(document.getElementById("faktureringModal")).hide();
+  });
+}
+
+/* ============================================================
+   Bulk operations
+============================================================ */
+function getSelectedIds() {
+  if (currentView() === "group") {
+    return $("#groupContainer .row-check:checked").map(function () {
+      return parseInt($(this).data("id"), 10);
+    }).get();
+  }
+  return $("#fakturering-table").bootstrapTable("getSelections").map(r => r.FakturaLinjeID);
+}
+
+function selectionHasInvalidCvr() {
+  if (currentView() === "group") {
+    return $("#groupContainer .row-check:checked[data-cvr-ok='0']").length > 0;
+  }
+  const sel = $("#fakturering-table").bootstrapTable("getSelections");
+  return sel.some(r => !isValidCvr(r.CVR));
+}
+
+document.getElementById("btnBulkGodkend").addEventListener("click", async () => {
+  const ids = getSelectedIds();
+  if (ids.length === 0) return baToast("Vælg mindst én linje først", "warning");
+
+  if (selectionHasInvalidCvr()) {
+    return baToast("Mindst én markeret linje har ugyldigt CVR — kan ikke godkendes. Ret i Deskpro først.", "danger");
+  }
+
+  const ok = await baConfirm(
+    `Godkend <strong>${ids.length}</strong> linje(r) til fakturering?<br><span class="text-secondary small">Linjerne låses og sendes videre.</span>`,
+    { title: "Godkend valgte", okLabel: "Godkend", variant: "success", icon: "bi-check2-circle" }
+  );
+  if (!ok) return;
+
+  fetch("/udeservering/api/fakturering/bulk_godkend", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ ids })
+  })
+  .then(r => r.json().then(j => ({ status: r.status, body: j })))
+  .then(({ status, body }) => {
+    if (!body.success) return baToast(body.error || "Fejl", "danger");
+    baToast(`${body.approved ?? ids.length} linje(r) godkendt`, "primary");
+    refreshActiveView();
+  });
+});
+
+document.getElementById("btnBulkFakturerIkke").addEventListener("click", async () => {
+  const ids = getSelectedIds();
+  if (ids.length === 0) return baToast("Vælg mindst én linje først", "warning");
+
+  const ok = await baConfirm(
+    `Markér <strong>${ids.length}</strong> linje(r) som "Fakturer ikke"?`,
+    { title: "Fakturer ikke", okLabel: "Marker", variant: "danger", icon: "bi-slash-circle" }
+  );
+  if (!ok) return;
+
+  bulkUpdateStatus(ids, "ikke", () => refreshActiveView());
+});
+
+/* ============================================================
+   Pris auto-beregning i modal
+============================================================ */
+async function updateModalPrice() {
+  const periode = document.getElementById("edit-Periode").value;
+  if (!periode) return;
+  const year = parseInt(periode.split(" ")[1]);
+  document.getElementById("edit-Year").value = year;
+
+  const payload = {
+    Zone:            document.getElementById("edit-Serveringszone").value,
+    Lokation:        document.getElementById("edit-Lokation").value,
+    Serveringsareal: document.getElementById("edit-Serveringsareal").value,
+    Facadelaengde:   document.getElementById("edit-Facadelaengde").value,
+    Month:           extractMonthNumber(periode),
+    Year:            year,
+  };
+
+  const response = await fetch("/udeservering/api/beregn_pris", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)
+  });
+  const json = await response.json();
+  if (!json.success) return;
+  document.getElementById("edit-Pris").value = json.data.belob;
+}
+
+function extractMonthNumber(str) {
+  const navn = str.split(" ")[0];
+  return MONTH_NAME_TO_NUM[navn] || 0;
+}
+
+["edit-Serveringsareal", "edit-Facadelaengde"].forEach(id => {
+  document.getElementById(id).addEventListener("input", updateModalPrice);
+});
+
+document.getElementById("btnResetData").addEventListener("click", async () => {
+  const id = document.getElementById("edit-FakturaLinjeID").value;
+  const ok = await baConfirm(
+    "Dette sletter fakturalinjen og gendanner den med opdateret data fra BrugAarhus ved næste synkronisering.",
+    { title: "Slet & gendan", okLabel: "Slet", variant: "warning", icon: "bi-arrow-counterclockwise" }
+  );
+  if (!ok) return;
+
+  fetch("/udeservering/api/fakturering/reset", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ FakturaLinjeID: id })
+  })
+  .then(r => r.json())
+  .then(j => {
+    if (!j.success) return baToast(j.error || "Fejl", "danger");
+    baToast("Linje slettet — gendannes ved næste synkronisering", "primary");
+    refreshActiveView();
+    bootstrap.Modal.getInstance(document.getElementById("faktureringModal")).hide();
+  });
+});
+</script>
+{% endblock %}

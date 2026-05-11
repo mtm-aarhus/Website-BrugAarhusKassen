@@ -3,7 +3,9 @@
     <div class="modal-content">
 
       <div class="modal-header">
-        <h5 class="modal-title">Redigér fakturalinje</h5>
+        <h5 class="modal-title">
+          <i class="bi bi-pencil-square me-2"></i>Redigér fakturalinje
+        </h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
 
@@ -13,10 +15,9 @@
           <input type="hidden" id="edit-FakturaLinjeID">
           <input type="hidden" id="edit-Year">
 
-          <!-- READ ONLY --------------------------------------------------------->
-
-          <div class="col-md-2">
-            <label class="form-label">Sag</label>
+          <!-- READ-ONLY KONTEKST -->
+          <div class="col-md-3">
+            <label class="form-label small text-secondary mb-1">Sag</label>
             <a id="edit-DeskproLink"
                class="form-control text-primary text-decoration-underline"
                style="padding-top:.375rem; padding-bottom:.375rem;"
@@ -24,68 +25,84 @@
           </div>
 
           <div class="col-md-3">
-            <label class="form-label">Måned</label>
+            <label class="form-label small text-secondary mb-1">Periode</label>
             <input class="form-control" id="edit-Periode" disabled>
           </div>
 
-          <div class="col-md-4">
-            <label class="form-label">Firmanavn</label>
+          <div class="col-md-6">
+            <label class="form-label small text-secondary mb-1">Firmanavn</label>
             <input class="form-control" id="edit-Firmanavn" disabled>
           </div>
 
           <div class="col-md-3">
-            <label class="form-label">CVR</label>
-            <input class="form-control" id="edit-CVR" disabled>
+            <label class="form-label small text-secondary mb-1">CVR</label>
+            <div class="input-group">
+              <input class="form-control" id="edit-CVR" disabled>
+              <span class="input-group-text" id="edit-CVR-status" title="">
+                <i class="bi bi-question-circle text-secondary"></i>
+              </span>
+            </div>
           </div>
 
-          <div class="col-md-6">
-            <label class="form-label">Adresse</label>
+          <div class="col-md-9">
+            <label class="form-label small text-secondary mb-1">Adresse</label>
             <input class="form-control" id="edit-Adresse" disabled>
           </div>
 
-
-          <div class="col-md-2" id="zone-col">
-            <label class="form-label">Zone</label>
+          <div class="col-md-3">
+            <label class="form-label small text-secondary mb-1">Zone</label>
             <input class="form-control" id="edit-Serveringszone" disabled>
           </div>
 
-          <div class="col-md-4" id="lokation-col">
-            <label class="form-label">Lokation</label>
+          <div class="col-md-9">
+            <label class="form-label small text-secondary mb-1">Lokation</label>
             <input class="form-control" id="edit-Lokation" disabled>
           </div>
 
-          <!-- EDITABLE ---------------------------------------------------------->
+          <div class="col-12"><hr class="my-2"></div>
 
+          <!-- EDITABLE -->
           <div class="col-md-3">
             <label class="form-label">Serveringsareal (m²)</label>
             <input type="number" step="0.01" class="form-control" id="edit-Serveringsareal">
           </div>
 
           <div class="col-md-3" id="facade-container">
-            <label class="form-label">Facadelaengde (m)</label>
+            <label class="form-label">Facadelængde (m)</label>
             <input type="number" step="0.01" class="form-control" id="edit-Facadelaengde">
           </div>
 
-          <!-- PRIS (read only) -->
-          <div class="col-md-2" id="pris-col">
+          <div class="col-md-3">
             <label class="form-label">Pris (auto)</label>
-            <input class="form-control" id="edit-Pris" readonly>
+            <input class="form-control fw-semibold" id="edit-Pris" readonly>
           </div>
 
-          
-          <div class="col-md-4" id="kommentar-col">
+          <div class="col-md-12">
             <label class="form-label">Kommentar</label>
-            <textarea class="form-control" id="edit-Kommentar"></textarea>
+            <textarea class="form-control" id="edit-Kommentar" rows="2"></textarea>
           </div>
 
         </form>
       </div>
 
       <div class="modal-footer">
-        <button id="btnResetData" class="btn btn-warning me-auto">Opdater data</button>
-        <button id="btnFakturerIkke" class="btn btn-danger">Fakturer ikke</button>
-        <button id="btnGem" class="btn btn-primary">Gem kladde</button>
-        <button id="btnSendTilFakturering" class="btn btn-success">Godkend</button>
+        <button id="btnResetData"      class="btn btn-outline-warning me-auto">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>Slet & gendan
+        </button>
+        <button id="btnFakturerIkke"   class="btn btn-outline-danger">
+          <i class="bi bi-slash-circle me-1"></i>Fakturer ikke
+        </button>
+        <button id="btnSendTilFakturering" class="btn btn-success">
+          <i class="bi bi-check2-circle me-1"></i>Godkend
+        </button>
+      </div>
+
+      <div class="px-3 pb-2">
+        <small class="text-secondary">
+          <i class="bi bi-info-circle me-1"></i>
+          Ændringer i grunddata (firmanavn, areal, lokation, mv.) skal foretages i Deskpro.
+          Næste synkronisering opdaterer linjen her. Godkendelse låser linjen permanent.
+        </small>
       </div>
 
     </div>

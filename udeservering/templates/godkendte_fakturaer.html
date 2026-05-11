@@ -3,19 +3,22 @@
 {% block content %}
 <div class="ba-page-head">
   <div>
-    <h1 class="ba-page-title"><i class="bi bi-receipt me-2"></i>Faktureret</h1>
-    <p class="ba-page-sub">Linjer som er sendt til SAP og faktureret. Kun læseadgang.</p>
+    <h1 class="ba-page-title"><i class="bi bi-patch-check me-2"></i>Godkendte fakturaer</h1>
+    <p class="ba-page-sub">
+      Linjer som sagsbehandler har godkendt og som er klar til at blive sendt til SAP/fakturering.
+      Linjer låses ved godkendelse — fortryd flytter dem tilbage til "Til godkendelse".
+    </p>
   </div>
 </div>
 
 <div class="row g-3 mb-3">
-  <div class="col-6 col-md-4">
+  <div class="col-12 col-md-4">
     <div class="ba-card ba-card-body ba-kpi">
       <span class="ba-kpi-label">Linjer</span>
       <span class="ba-kpi-value ba-num" id="kpiLines">–</span>
     </div>
   </div>
-  <div class="col-6 col-md-4">
+  <div class="col-12 col-md-4">
     <div class="ba-card ba-card-body ba-kpi">
       <span class="ba-kpi-label">Unikke tilladelser</span>
       <span class="ba-kpi-value ba-num" id="kpiFirms">–</span>
@@ -23,7 +26,7 @@
   </div>
   <div class="col-12 col-md-4">
     <div class="ba-card ba-card-body ba-kpi">
-      <span class="ba-kpi-label">Faktureret beløb</span>
+      <span class="ba-kpi-label">Godkendt beløb</span>
       <span class="ba-kpi-value ba-num" id="kpiSum">–</span>
     </div>
   </div>
@@ -68,17 +71,28 @@
   </div>
 </div>
 
+<!-- Floating bulk-action bar -->
+<div id="bulkBar" class="ba-bulkbar">
+  <span class="ba-bulkbar-count"><span id="bulkCount">0</span> linje(r) markeret</span>
+  <button id="btnBulkFortryd" class="btn btn-outline-warning btn-sm">
+    <i class="bi bi-arrow-counterclockwise me-1"></i>Fortryd godkendelse
+  </button>
+  <a id="btnBulkClear" class="ba-bulkbar-clear" href="#" title="Ryd markering">
+    <i class="bi bi-x-lg"></i>
+  </a>
+</div>
+
 <!-- Flat view (hidden by default) -->
 <div id="flatView" class="ba-card" style="display:none">
   <div class="ba-card-body p-0">
-    <table id="faktureret-table"
+    <table id="godkendt-table"
       class="table align-middle"
       data-toggle="table"
       data-pagination="true"
       data-side-pagination="server"
       data-sort-name="FakturaDatoSort"
       data-sort-order="desc"
-      data-url="{{ url_for('udeservering.api_fakturering') }}?status=Faktureret"
+      data-url="{{ url_for('udeservering.api_fakturering') }}?status=TilFakturering"
       data-page-size="25"
       data-page-list="[10, 25, 50, 100, All]"
       data-unique-id="FakturaLinjeID"
@@ -86,15 +100,16 @@
       data-data-field="rows">
       <thead>
         <tr>
-          <th data-field="DeskproID"        data-sortable="true" data-formatter="linkFormatter">Sag</th>
-          <th data-field="Firmanavn"        data-sortable="true">Firmanavn</th>
-          <th data-field="Adresse"          data-sortable="true">Adresse</th>
-          <th data-field="FakturaDatoSort"  data-sortable="true" data-formatter="maanedAarFormatter">Periode</th>
-          <th data-field="Serveringszone"  data-sortable="true" data-formatter="zoneFormatter">Zone</th>
+          <th data-field="state"           data-checkbox="true"></th>
+          <th data-field="DeskproID"       data-sortable="true" data-formatter="linkFormatter">Sag</th>
+          <th data-field="Firmanavn"       data-sortable="true">Firmanavn</th>
+          <th data-field="Adresse"         data-sortable="true">Adresse</th>
+          <th data-field="FakturaDatoSort" data-sortable="true" data-formatter="maanedAarFormatter">Periode</th>
+          <th data-field="Serveringszone" data-sortable="true" data-formatter="zoneFormatter">Zone</th>
           <th data-field="Lokation"        data-sortable="true" data-formatter="lokationFormatter">Lokation</th>
-          <th data-field="Serveringsareal"  data-sortable="true" data-formatter="arealFormatter"  class="text-end">Areal</th>
-          <th data-field="Facadelaengde"    data-sortable="true" data-formatter="facadeFormatter" class="text-end">Facade</th>
-          <th data-field="Pris"             data-sortable="true" data-formatter="priceFormatter"  class="text-end">Pris</th>
+          <th data-field="Serveringsareal" data-sortable="true" data-formatter="arealFormatter"  class="text-end">Areal</th>
+          <th data-field="Facadelaengde"   data-sortable="true" data-formatter="facadeFormatter" class="text-end">Facade</th>
+          <th data-field="Pris"            data-sortable="true" data-formatter="priceFormatter"  class="text-end">Pris</th>
         </tr>
       </thead>
     </table>
@@ -112,7 +127,7 @@
 {{ super() }}
 
 <script>
-const STATUS = "Faktureret";
+const STATUS = "TilFakturering";
 const MONTHS_PER_PAGE = 6;
 let groupedPage = 1;
 let cachedGroups = [];
@@ -136,8 +151,13 @@ function currentView() {
   return $("input[name='vw']:checked").val() || "group";
 }
 
+function refreshActiveView() {
+  if (currentView() === "group") loadGrouped();
+  else $("#godkendt-table").bootstrapTable("refresh", { url: buildUrl() });
+}
+
 function applyFilters() {
-  $("#faktureret-table").bootstrapTable("refresh", { url: buildUrl() });
+  $("#godkendt-table").bootstrapTable("refresh", { url: buildUrl() });
   if (currentView() === "group") loadGrouped();
 }
 
@@ -180,7 +200,33 @@ function setSummaryKpis(summary) {
   $("#kpiSum").text(fmtKr(summary.sum_pris) + " kr");
 }
 
-$("#faktureret-table").on("load-success.bs.table", (e, data) => setSummaryKpis(data?.summary));
+function updateBulkBar() {
+  const n = getSelectedIds().length;
+  $("#bulkCount").text(n);
+  $("#bulkBar").toggleClass("is-active", n > 0);
+}
+
+$("#godkendt-table").on("load-success.bs.table", (e, data) => {
+  setSummaryKpis(data?.summary);
+  updateBulkBar();
+});
+$("#godkendt-table").on(
+  "check.bs.table uncheck.bs.table check-all.bs.table uncheck-all.bs.table",
+  updateBulkBar
+);
+
+$("#btnBulkClear").on("click", e => {
+  e.preventDefault();
+  if (currentView() === "group") {
+    $("#groupContainer .row-check, #groupContainer .group-check")
+      .prop("checked", false).prop("indeterminate", false);
+  } else {
+    $("#godkendt-table").bootstrapTable("uncheckAll");
+  }
+  updateBulkBar();
+});
+
+installPaginationGuard("#godkendt-table", () => getSelectedIds(), updateBulkBar);
 
 /* View toggle */
 $("input[name='vw']").on("change", function () {
@@ -191,8 +237,9 @@ $("input[name='vw']").on("change", function () {
   } else {
     $("#groupView").hide();
     $("#flatView").show();
-    $("#faktureret-table").bootstrapTable("refresh", { url: buildUrl() });
+    $("#godkendt-table").bootstrapTable("refresh", { url: buildUrl() });
   }
+  updateBulkBar();
 });
 
 /* Grouped view */
@@ -235,6 +282,10 @@ function renderGroupedPage() {
     const sum = g.rows.reduce((s, r) => s + (parseFloat(r.Pris) || 0), 0);
     const rowsHtml = g.rows.map(r => `
       <tr>
+        <td class="text-center">
+          <input type="checkbox" class="form-check-input row-check"
+                 data-id="${r.FakturaLinjeID}" data-group="${g.key}">
+        </td>
         <td>${linkFormatter("", r)}</td>
         <td>${r.Firmanavn || ""}</td>
         <td>${r.Adresse || ""}</td>
@@ -248,7 +299,11 @@ function renderGroupedPage() {
     return `
       <details class="ba-card mb-2" open>
         <summary class="ba-card-body d-flex justify-content-between align-items-center" style="cursor:pointer">
-          <span class="fw-semibold"><i class="bi bi-calendar3 me-2"></i>${g.label}</span>
+          <span class="d-flex align-items-center">
+            <input type="checkbox" class="form-check-input me-3 group-check" data-group="${g.key}"
+                   onclick="event.stopPropagation()" title="Markér alle i denne måned">
+            <span class="fw-semibold"><i class="bi bi-calendar3 me-2"></i>${g.label}</span>
+          </span>
           <span class="text-secondary small">
             <span class="me-3"><strong>${g.rows.length}</strong> linje(r)</span>
             <span><strong>${fmtKr(sum)}</strong> kr</span>
@@ -258,6 +313,7 @@ function renderGroupedPage() {
           <table class="table align-middle mb-0">
             <thead>
               <tr>
+                <th style="width:40px"></th>
                 <th>Sag</th>
                 <th>Firmanavn</th>
                 <th>Adresse</th>
@@ -294,9 +350,63 @@ function renderGroupedPage() {
   } else {
     $("#groupPager").hide();
   }
+
+  updateBulkBar();
 }
 
-$(document).on("click", "#pgPrev", () => { groupedPage = Math.max(1, groupedPage - 1); renderGroupedPage(); });
-$(document).on("click", "#pgNext", () => { groupedPage++; renderGroupedPage(); });
+async function changeGroupedPage(newPage) {
+  if (newPage === groupedPage) return;
+  const ids = getSelectedIds();
+  if (ids.length > 0) {
+    const ok = await baConfirm(
+      `Du har <strong>${ids.length}</strong> linje(r) markeret. Skift side alligevel?<br><span class="text-secondary small">Markeringen ryddes.</span>`,
+      { title: "Skift side", okLabel: "Skift side", variant: "warning", icon: "bi-exclamation-triangle" }
+    );
+    if (!ok) return;
+  }
+  groupedPage = newPage;
+  renderGroupedPage();
+}
+
+$(document).on("click", "#pgPrev", () => changeGroupedPage(groupedPage - 1));
+$(document).on("click", "#pgNext", () => changeGroupedPage(groupedPage + 1));
+
+$(document).on("click", "#groupContainer .row-check", e => e.stopPropagation());
+$(document).on("change", "#groupContainer .row-check", function () {
+  const k = $(this).data("group");
+  const all = $(`#groupContainer .row-check[data-group="${k}"]`);
+  const checked = all.filter(":checked");
+  const master = $(`#groupContainer .group-check[data-group="${k}"]`)[0];
+  if (master) {
+    master.checked = (checked.length === all.length);
+    master.indeterminate = (checked.length > 0 && checked.length < all.length);
+  }
+  updateBulkBar();
+});
+$(document).on("change", "#groupContainer .group-check", function () {
+  const k = $(this).data("group");
+  $(`#groupContainer .row-check[data-group="${k}"]`).prop("checked", this.checked);
+  updateBulkBar();
+});
+
+function getSelectedIds() {
+  if (currentView() === "group") {
+    return $("#groupContainer .row-check:checked").map(function () {
+      return parseInt($(this).data("id"), 10);
+    }).get();
+  }
+  return $("#godkendt-table").bootstrapTable("getSelections").map(r => r.FakturaLinjeID);
+}
+
+document.getElementById("btnBulkFortryd").addEventListener("click", async () => {
+  const ids = getSelectedIds();
+  if (ids.length === 0) return baToast("Vælg mindst én linje", "warning");
+  const ok = await baConfirm(
+    `Fortryd godkendelse af <strong>${ids.length}</strong> linje(r)?<br><span class="text-secondary small">De flyttes tilbage til "Til godkendelse".</span>`,
+    { title: "Fortryd godkendelse", okLabel: "Fortryd", variant: "warning", icon: "bi-arrow-counterclockwise" }
+  );
+  if (!ok) return;
+  bulkUpdateStatus(ids, "save", () => refreshActiveView());
+});
 </script>
 {% endblock %}

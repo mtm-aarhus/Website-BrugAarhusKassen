@@ -2,82 +2,462 @@
 <html lang="da" data-bs-theme="auto">
 <head>
   <script>
-            (function() {
-                // Check system preference
-                const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-                document.documentElement.setAttribute("data-bs-theme", prefersDark ? "dark" : "light");
-            })();
-
+    /* Apply theme as early as possible to avoid flash. */
+    (function() {
+      const stored = localStorage.getItem("brugaarhus-theme");
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const theme = stored || (prefersDark ? "dark" : "light");
+      document.documentElement.setAttribute("data-bs-theme", theme);
+    })();
   </script>
 
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BrugAarhus Kassen – {{ page_title }}</title>
 
-  <title>BrugAarhus – {{ page_title }}</title>
-
-  <!-- ---------------- CSS ---------------- -->
   <link rel="icon" href="{{ url_for('static', filename='favicon-32x32.png') }}" type="image/png">
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/css/bootstrap.min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-table/bootstrap-table.min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
 
   <style>
-    /* ------------------------------------- */
-    /* Global Layout & Navigation Styling    */
-    /* ------------------------------------- */
-    body { padding: 0; }
-    .navbar-brand img { height: 28px; width: auto; }
-    .navbar-title { font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
-
-    [data-bs-theme="light"] .navbar-title { color: #000; }
-    [data-bs-theme="dark"]  .navbar-title { color: #fff; }
-
-    .right-actions { display:flex; align-items:center; gap:.5rem; margin-left:auto; }
-    .last-sync-label { font-size:.85rem; color:var(--bs-secondary-color); }
-
-    /* Mobile navbar dropdown styling */
-    @media (max-width: 991.98px) {
-      #mainNavbar.navbar-collapse {
-        position: absolute; top:100%; left:0; right:0;
-        background: var(--bs-body-bg);
-        border-top: 1px solid var(--bs-border-color);
-      }
-      .last-sync-label { display:none; }
+    /* ============================================================
+       Tokens & layout
+       ============================================================ */
+    :root {
+      --ba-radius: 10px;
+      --ba-shadow-sm: 0 1px 2px rgba(0,0,0,.05), 0 1px 1px rgba(0,0,0,.04);
+      --ba-shadow:    0 4px 14px rgba(0,0,0,.08);
     }
 
-    /* ------------------------------------- */
-    /* BootstrapTable Global Styling         */
-    /* ------------------------------------- */
+    [data-bs-theme="light"] {
+      --ba-page-bg: #f4f6f9;
+      --ba-card-bg: #ffffff;
+      --ba-soft:    #eef2f7;
+      --ba-muted:   #6b7280;
+      --ba-border:  #e5e7eb;
+      --ba-accent:  #1f6feb;
+    }
 
-    /* ---------- Bootstrap-table dark fixes ---------- */
+    [data-bs-theme="dark"] {
+      --ba-page-bg: #0f1115;
+      --ba-card-bg: #161a21;
+      --ba-soft:    #1c222b;
+      --ba-muted:   #9ca3af;
+      --ba-border:  #232a35;
+      --ba-accent:  #4f8eff;
+    }
+
+    html, body { height: 100%; }
+    body {
+      background: var(--ba-page-bg);
+      color: var(--bs-body-color);
+      min-height: 100vh;
+    }
+
+    /* ============================================================
+       Top navbar
+       ============================================================ */
+    .ba-navbar {
+      background: var(--ba-card-bg);
+      border-bottom: 1px solid var(--ba-border);
+      box-shadow: var(--ba-shadow-sm);
+    }
+    .ba-navbar .navbar-brand {
+      font-weight: 700;
+      letter-spacing: .01em;
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+    }
+    .ba-navbar .navbar-brand img { height: 26px; }
+    .ba-navbar .brand-text {
+      font-size: 1rem;
+      color: var(--bs-body-color);
+    }
+    .ba-navbar .brand-sub {
+      font-size: .72rem;
+      color: var(--ba-muted);
+      font-weight: 500;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .ba-nav-modules {
+      display: flex;
+      gap: .25rem;
+      align-items: center;
+    }
+    .ba-module {
+      position: relative;
+    }
+    .ba-module > .ba-module-toggle {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--bs-body-color);
+      padding: .45rem .8rem;
+      border-radius: var(--ba-radius);
+      font-weight: 600;
+      font-size: .92rem;
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      cursor: pointer;
+    }
+    .ba-module > .ba-module-toggle:hover,
+    .ba-module.is-active > .ba-module-toggle {
+      background: var(--ba-soft);
+      border-color: var(--ba-border);
+    }
+    .ba-module > .ba-module-toggle .bi-chevron-down {
+      font-size: .7rem;
+      opacity: .65;
+    }
+
+    .ba-submenu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      min-width: 240px;
+      background: var(--ba-card-bg);
+      border: 1px solid var(--ba-border);
+      border-radius: var(--ba-radius);
+      box-shadow: var(--ba-shadow);
+      padding: .35rem;
+      z-index: 1050;
+    }
+    .ba-module.is-open > .ba-submenu { display: block; }
+    .ba-submenu a {
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+      padding: .5rem .65rem;
+      border-radius: 8px;
+      color: var(--bs-body-color);
+      text-decoration: none;
+      font-size: .92rem;
+    }
+    .ba-submenu a:hover { background: var(--ba-soft); }
+    .ba-submenu a.is-active {
+      background: color-mix(in oklab, var(--ba-accent) 12%, transparent);
+      color: var(--ba-accent);
+    }
+    .ba-submenu a i {
+      width: 1.05rem;
+      text-align: center;
+      opacity: .85;
+    }
+    .ba-submenu .ba-divider {
+      height: 1px;
+      background: var(--ba-border);
+      margin: .35rem .25rem;
+    }
+    .ba-submenu .ba-section {
+      font-size: .68rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--ba-muted);
+      padding: .55rem .65rem .25rem;
+    }
+
+    .ba-nav-actions {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+    }
+    .ba-icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 9px;
+      border: 1px solid var(--ba-border);
+      background: transparent;
+      color: var(--bs-body-color);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .ba-icon-btn:hover { background: var(--ba-soft); }
+
+    .ba-sync-btn {
+      gap: .4rem;
+    }
+
+    /* Mobile collapse */
+    @media (max-width: 991.98px) {
+      .ba-nav-modules {
+        flex-direction: column;
+        align-items: stretch;
+        width: 100%;
+        gap: 0;
+      }
+      .ba-module > .ba-module-toggle { width: 100%; justify-content: space-between; }
+      .ba-submenu {
+        position: static;
+        box-shadow: none;
+        border: none;
+        padding-left: 1.25rem;
+      }
+    }
+
+    /* ============================================================
+       Page chrome
+       ============================================================ */
+    .ba-page-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    .ba-page-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: -0.01em;
+    }
+    .ba-page-sub {
+      color: var(--ba-muted);
+      font-size: .92rem;
+      margin: .15rem 0 0;
+    }
+
+    .ba-card {
+      background: var(--ba-card-bg);
+      border: 1px solid var(--ba-border);
+      border-radius: var(--ba-radius);
+      box-shadow: var(--ba-shadow-sm);
+      overflow: hidden;          /* clip inner table/details to rounded corners */
+    }
+    .ba-card-body { padding: 1rem 1.1rem; }
+
+    .ba-kpi {
+      display: flex;
+      flex-direction: column;
+      gap: .15rem;
+    }
+    .ba-kpi-label {
+      font-size: .72rem;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      color: var(--ba-muted);
+      font-weight: 600;
+    }
+    .ba-kpi-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -.02em;
+    }
+    .ba-kpi-foot {
+      font-size: .82rem;
+      color: var(--ba-muted);
+    }
+
+    /* Filter bar */
+    .ba-filterbar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: .5rem;
+      padding: .85rem 1rem;
+      background: var(--ba-card-bg);
+      border: 1px solid var(--ba-border);
+      border-radius: var(--ba-radius);
+      box-shadow: var(--ba-shadow-sm);
+      margin-bottom: .75rem;
+    }
+    .ba-filterbar .form-select-sm,
+    .ba-filterbar .form-control-sm {
+      min-width: 130px;
+    }
+    .ba-filterbar .ba-spacer { flex: 1; }
+    .ba-filterbar-label {
+      font-size: .8rem;
+      color: var(--ba-muted);
+      font-weight: 600;
+    }
+
+    /* ============================================================
+       Bootstrap-table polish — the outer .ba-card owns the rounded
+       shell, so the inner container has no border / radius of its own.
+       ============================================================ */
+    .bootstrap-table .fixed-table-toolbar {
+      padding: .75rem 1rem;
+      background: var(--ba-card-bg);
+      border-bottom: 1px solid var(--ba-border);
+    }
+    .bootstrap-table .fixed-table-pagination {
+      padding: .65rem 1rem .75rem;
+      background: var(--ba-card-bg);
+      border-top: 1px solid var(--ba-border);
+    }
+    .bootstrap-table .fixed-table-pagination .pagination { margin: 0; }
+    .bootstrap-table .fixed-table-container {
+      border: none;
+      border-radius: 0;
+      background: var(--ba-card-bg);
+    }
+    .bootstrap-table .table {
+      margin-bottom: 0;
+      background: var(--ba-card-bg);
+    }
+    .bootstrap-table .table thead th {
+      background: var(--ba-soft);
+      color: var(--bs-body-color);
+      border-bottom: 1px solid var(--ba-border);
+      font-size: .8rem;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      font-weight: 600;
+      padding: .65rem .65rem;
+      white-space: nowrap;
+    }
+    .bootstrap-table .table td {
+      vertical-align: middle;
+      padding: .65rem .65rem;
+      border-bottom: 1px solid var(--ba-border);
+      font-size: .92rem;
+    }
+    .bootstrap-table .table tbody tr:last-child td { border-bottom: none; }
+
+    /* Grouped view: same treatment for the table inside <details class="ba-card"> */
+    .ba-card > .table-responsive > .table {
+      margin-bottom: 0;
+    }
+    .ba-card > .table-responsive > .table tbody tr:last-child td {
+      border-bottom: none;
+    }
+    .ba-card > .table-responsive > .table thead th {
+      border-top: 1px solid var(--ba-border);
+    }
+    .bootstrap-table .table tbody tr:hover {
+      background: color-mix(in oklab, var(--ba-accent) 4%, transparent);
+    }
+
+    /* Dark fixes */
     [data-bs-theme="dark"] .bootstrap-table .fixed-table-container,
     [data-bs-theme="dark"] .bootstrap-table .fixed-table-body,
     [data-bs-theme="dark"] .bootstrap-table .fixed-table-loading,
     [data-bs-theme="dark"] .bootstrap-table .table {
-      background-color: var(--bs-body-bg) !important;
+      background-color: var(--ba-card-bg) !important;
+      color: var(--bs-body-color);
+    }
+    [data-bs-theme="dark"] .bootstrap-table .fixed-table-loading {
+      border-color: var(--ba-border);
+    }
+
+    /* search box */
+    .bootstrap-table .search input {
+      border-radius: 8px;
+      border: 1px solid var(--ba-border);
+      background: var(--ba-page-bg);
+    }
+
+    /* Pills / chips */
+    .ba-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      padding: .15rem .55rem;
+      border-radius: 999px;
+      font-size: .78rem;
+      font-weight: 600;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+    .ba-chip .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: .8;
+    }
+    .ba-chip-ny       { color: #1f6feb; background: rgba(31,111,235,.1);  border-color: rgba(31,111,235,.25); }
+    .ba-chip-godkendt { color: #14803c; background: rgba(20,128,60,.1);   border-color: rgba(20,128,60,.25); }
+    .ba-chip-faktureret{color: #5a31b6; background: rgba(90,49,182,.1);   border-color: rgba(90,49,182,.25); }
+    .ba-chip-ikke     { color: #b91c1c; background: rgba(185,28,28,.1);   border-color: rgba(185,28,28,.25); }
+    .ba-chip-aktiv    { color: #14803c; background: rgba(20,128,60,.1);   border-color: rgba(20,128,60,.25); }
+    .ba-chip-inaktiv  { color: #6b7280; background: rgba(107,114,128,.1); border-color: rgba(107,114,128,.25); }
+    .ba-chip-zone     { color: #b45309; background: rgba(180,83,9,.1);    border-color: rgba(180,83,9,.25); }
+    .ba-chip-lokation { color: #0e7490; background: rgba(14,116,144,.1);  border-color: rgba(14,116,144,.25); }
+
+    .ba-num { font-variant-numeric: tabular-nums; }
+
+    /* Toast */
+    .ba-toast-wrap {
+      position: fixed; right: 1rem; bottom: 1rem; z-index: 1080;
+      display: flex; flex-direction: column; gap: .5rem;
+    }
+
+    /* Floating bulk-action bar — appears when selection > 0, sticks to bottom on scroll */
+    .ba-bulkbar {
+      position: fixed;
+      left: 50%;
+      bottom: 1.5rem;
+      transform: translateX(-50%) translateY(120%);
+      display: inline-flex;
+      align-items: center;
+      gap: .55rem;
+      padding: .55rem .85rem;
+      background: var(--ba-card-bg);
+      border: 1px solid var(--ba-border);
+      border-radius: 999px;
+      box-shadow: var(--ba-shadow);
+      z-index: 1040;
+      max-width: calc(100vw - 2rem);
+      opacity: 0;
+      pointer-events: none;
+      transition: transform .18s ease, opacity .18s ease;
+    }
+    .ba-bulkbar.is-active {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .ba-bulkbar-count {
+      font-weight: 600;
+      font-size: .9rem;
+      padding: 0 .5rem 0 .25rem;
+      border-right: 1px solid var(--ba-border);
+      margin-right: .25rem;
+    }
+    .ba-bulkbar-clear {
+      color: var(--ba-muted);
+      text-decoration: none;
+      font-size: .85rem;
+      padding: .15rem .4rem;
+      border-radius: 6px;
+    }
+    .ba-bulkbar-clear:hover {
+      background: var(--ba-soft);
       color: var(--bs-body-color);
     }
 
-    [data-bs-theme="dark"] .bootstrap-table .table thead th {
-      background-color: var(--bs-tertiary-bg);
+    /* Modal */
+    .modal-content {
+      background: var(--ba-card-bg);
+      border-radius: var(--ba-radius);
+      border: 1px solid var(--ba-border);
+    }
+    .modal-header { border-bottom: 1px solid var(--ba-border); }
+    .modal-footer { border-top: 1px solid var(--ba-border); }
+
+    .content-wrap {
+      padding: 1.25rem 1.25rem 2rem;
+      max-width: 1600px;
+      margin: 0 auto;
     }
 
-    [data-bs-theme="dark"] .bootstrap-table .fixed-table-loading {
-      border-color: var(--bs-border-color);
-    }
-
-    .content-wrap { padding: 1rem; }
-
-    /* Prettier JSON cells */
+    /* JSON cells */
     pre.json-field {
-      background: var(--bs-tertiary-bg);
+      background: var(--ba-soft);
       color: var(--bs-body-color);
       padding: 0.35rem 0.5rem;
       border-radius: 0.25rem;
       white-space: pre-wrap;
+      font-size: .82rem;
     }
-
-    .content-wrap { padding: 1rem; }
   </style>
 
   {% block extra_head %}{% endblock %}
@@ -85,147 +465,344 @@
 
 <body>
 
-<!-- ------------------------------------- -->
-<!-- Top Navigation                         -->
-<!-- ------------------------------------- -->
-<nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom sticky-top">
-  <div class="container-fluid">
+<!-- ====================================================
+     Top Navigation
+     ==================================================== -->
+<nav class="ba-navbar navbar navbar-expand-lg sticky-top">
+  <div class="container-fluid" style="max-width:1600px;">
 
-    <!-- Mobile Menu Button -->
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-
-    <!-- Collapsible Nav -->
-    <div class="collapse navbar-collapse" id="mainNavbar">
-      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-        <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle fw-semibold" href="#" role="button" data-bs-toggle="dropdown">
-            Udeservering
-          </a>
-          <ul class="dropdown-menu">
-            <li><a class="dropdown-item {% if page_title=='applications' %}active{% endif %}" href="{{ url_for('udeservering.applications') }}"><i class="bi bi-file-earmark-plus me-1"></i>Ansøgninger</a></li>
-            <li><a class="dropdown-item {% if page_title=='fakturering' %}active{% endif %}" href="{{ url_for('udeservering.fakturering') }}"><i class="bi bi-send-check me-1"></i>Fakturering</a></li>
-            <li><a class="dropdown-item {% if page_title=='FakturerIkke' %}active{% endif %}"
-                  href="{{ url_for('udeservering.fakturer_ikke') }}">
-                  <i class="bi bi-x-circle me-1"></i>Fakturer ikke</a></li>
-
-            <li><a class="dropdown-item {% if page_title=='TilFakturering' %}active{% endif %}"
-                  href="{{ url_for('udeservering.til_fakturering_page') }}">
-                  <i class="bi bi-hourglass-split me-1"></i>Til fakturering</a></li>
-
-            <li><a class="dropdown-item {% if page_title=='Faktureret' %}active{% endif %}"
-                  href="{{ url_for('udeservering.faktureret_page') }}">
-                  <i class="bi bi-check2-circle me-1"></i>Faktureret</a></li>
-            <li><a class="dropdown-item {% if page_title=='Statistik' %}active{% endif %}" href="{{ url_for('udeservering.statistik') }}"><i class="bi bi-graph-up me-1"></i>Statistik</a></li>
-            <li>
-              <a class="dropdown-item {% if page_title=='Parametre' %}active{% endif %}"
-                href="{{ url_for('udeservering.parametre_page') }}">
-                <i class="bi bi-gear me-1"></i>Parametre & takster
-              </a>
-            </li>
-
-            <li><hr class="dropdown-divider"></li>
-          </ul>
-        </li>
-      </ul>
-    </div>
-
-    <!-- Right Actions -->
-    <div class="right-actions" style="margin-right: 10px" >
-      <button id="resetTriggerBtn" class="btn btn-sm btn-primary">
-        <i class="bi bi-arrow-repeat me-1"></i>Synkroniser
-      </button>
-    </div>
-
-    <!-- Logo -->
-    <a class="navbar-brand ms-auto" href="{{ url_for('udeservering.applications') }}">
+    <!-- Brand -->
+    <a class="navbar-brand" href="{{ url_for('udeservering.applications') }}">
       <picture>
         <source srcset="{{ url_for('static', filename='aak-logo-dark.svg') }}" media="(prefers-color-scheme: dark)">
         <img src="{{ url_for('static', filename='aak-logo.svg') }}" alt="AAK Logo">
       </picture>
+      <span>
+        <span class="brand-text">BrugAarhus Kassen</span>
+        <span class="d-block brand-sub">Fakturerings­modul</span>
+      </span>
     </a>
+
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <div class="collapse navbar-collapse" id="mainNavbar">
+
+      <!-- Modules -->
+      <div class="ba-nav-modules ms-lg-3">
+
+        <div class="ba-module {% if page_key in ['applications','til_godkendelse','godkendte_fakturaer','faktureret','fakturer_ikke','statistik','parametre'] %}is-active{% endif %}">
+          <button class="ba-module-toggle" type="button" data-ba-toggle>
+            <i class="bi bi-shop"></i>
+            <span>Udeservering</span>
+            <i class="bi bi-chevron-down"></i>
+          </button>
+          <div class="ba-submenu">
+
+            <div class="ba-section">Sager</div>
+            <a href="{{ url_for('udeservering.applications') }}" class="{% if page_key=='applications' %}is-active{% endif %}">
+              <i class="bi bi-files"></i>Ansøgninger
+            </a>
+
+            <div class="ba-divider"></div>
+            <div class="ba-section">Fakturering</div>
+            <a href="{{ url_for('udeservering.til_godkendelse') }}" class="{% if page_key=='til_godkendelse' %}is-active{% endif %}">
+              <i class="bi bi-clipboard-check"></i>Til godkendelse
+            </a>
+            <a href="{{ url_for('udeservering.godkendte_fakturaer') }}" class="{% if page_key=='godkendte_fakturaer' %}is-active{% endif %}">
+              <i class="bi bi-patch-check"></i>Godkendte fakturaer
+            </a>
+            <a href="{{ url_for('udeservering.faktureret_page') }}" class="{% if page_key=='faktureret' %}is-active{% endif %}">
+              <i class="bi bi-receipt"></i>Faktureret
+            </a>
+            <a href="{{ url_for('udeservering.fakturer_ikke') }}" class="{% if page_key=='fakturer_ikke' %}is-active{% endif %}">
+              <i class="bi bi-slash-circle"></i>Fakturer ikke
+            </a>
+
+            <div class="ba-divider"></div>
+            <div class="ba-section">Indsigt &amp; opsætning</div>
+            <a href="{{ url_for('udeservering.statistik') }}" class="{% if page_key=='statistik' %}is-active{% endif %}">
+              <i class="bi bi-graph-up"></i>Statistik
+            </a>
+            <a href="{{ url_for('udeservering.parametre_page') }}" class="{% if page_key=='parametre' %}is-active{% endif %}">
+              <i class="bi bi-sliders"></i>Parametre &amp; takster
+            </a>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right-side actions -->
+      <div class="ba-nav-actions ms-lg-auto mt-3 mt-lg-0">
+        <button id="resetTriggerBtn" class="btn btn-primary btn-sm ba-sync-btn">
+          <i class="bi bi-arrow-repeat"></i><span> Synkroniser</span>
+        </button>
+        <button id="themeToggleBtn" class="ba-icon-btn" title="Skift tema" aria-label="Skift tema">
+          <i class="bi bi-circle-half"></i>
+        </button>
+      </div>
+    </div>
   </div>
 </nav>
 
-<!-- ------------------------------------- -->
-<!-- Main Page Content                      -->
-<!-- ------------------------------------- -->
+<div class="ba-toast-wrap" id="toastWrap"></div>
+
+<!-- Generic confirmation modal — used by baConfirm() instead of native confirm() -->
+<div class="modal fade" id="baConfirmModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i id="baConfirmIcon" class="bi bi-question-circle me-2"></i>
+          <span id="baConfirmTitle">Bekræft handling</span>
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p id="baConfirmMessage" class="mb-0"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annullér</button>
+        <button type="button" id="baConfirmOk" class="btn btn-primary">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="content-wrap">
   {% block content %}{% endblock %}
 </div>
 
-<!-- ------------------------------------- -->
-<!-- JS Includes                            -->
-<!-- ------------------------------------- -->
 <script src="{{ url_for('static', filename='vendor/jquery/jquery.min.js') }}"></script>
 <script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
 <script src="{{ url_for('static', filename='vendor/bootstrap-table/bootstrap-table.min.js') }}"></script>
 
 <script>
-    (function() {
-      const mql = window.matchMedia('(prefers-color-scheme: dark)');
-      const apply = () => document.documentElement.setAttribute('data-bs-theme', mql.matches ? 'dark' : 'light');
-      apply();
-      mql.addEventListener('change', apply);
-    })();
+  /* ============================================================
+     Theme toggle (manual override of system preference)
+     ============================================================ */
+  (function() {
+    const KEY = "brugaarhus-theme";
+    const btn = document.getElementById("themeToggleBtn");
 
-  /* ---------------------------
-     Bootstrap-Table Locale (DK)
-     --------------------------- */
+    function setTheme(t) {
+      document.documentElement.setAttribute("data-bs-theme", t);
+      localStorage.setItem(KEY, t);
+    }
 
-    $.extend($.fn.bootstrapTable.defaults, {
-        formatAllRows: function () { return 'Alle'; },
-        formatLoadingMessage: function () { return 'Indlæser, vent venligst...'; },
-        formatSearch: function () { return 'Søg'; },
-        formatShowingRows: function (pageFrom, pageTo, totalRows, totalNotFiltered) {
-          return 'Viser ' + pageFrom + ' til ' + pageTo + ' ud af ' + totalRows + ' linjer.';
-        },
-        formatRecordsPerPage: function (pageNumber) { return pageNumber + '&nbsp; pr. side'; },
-        formatNoMatches: function () { return 'Ingen rækker'; }
+    btn?.addEventListener("click", () => {
+      const cur = document.documentElement.getAttribute("data-bs-theme");
+      setTheme(cur === "dark" ? "light" : "dark");
     });
-  </script>
-  <script>
+  })();
 
-
-  function arealFormatter(value) {
-    if (!value) return ""; return value + " m²";
-  }
-
-  function facadeFormatter(value) {
-    if (!value) return ""; return value + " m";
-  }
-
-  function monthFormatter(value) {
-    if (!value) return '';
-    try {
-      const arr = JSON.parse(value);
-      return Array.isArray(arr) ? arr.join(', ') : value;
-    } catch { return value; }
-  }
-
-function linkFormatter(value, row) {
-  if (!row) return '';
-
-  const ticketId = row.DeskproID || row.Id;
-  if (!ticketId) return '';
-
-  return `<a href="https://ans.brugaarhus.dk/app#/t/ticket/${ticketId}" target="_blank">${ticketId}</a>`;
-}
-
-  function dateFormatter(value) {
-      if (!value) return "";
-      try {
-          const d = new Date(value);
-          const day = String(d.getDate()).padStart(2, "0");
-          const month = String(d.getMonth() + 1).padStart(2, "0");
-          const year = d.getFullYear();
-          return `${day}-${month}-${year}`;
-      } catch {
-          return value;
+  /* ============================================================
+     Custom dropdown for module submenus
+     - click toggles open
+     - outside-click closes
+     ============================================================ */
+  (function() {
+    document.querySelectorAll("[data-ba-toggle]").forEach(btn => {
+      btn.addEventListener("click", e => {
+        e.stopPropagation();
+        const mod = btn.closest(".ba-module");
+        const wasOpen = mod.classList.contains("is-open");
+        document.querySelectorAll(".ba-module.is-open").forEach(m => m.classList.remove("is-open"));
+        if (!wasOpen) mod.classList.add("is-open");
+      });
+    });
+    document.addEventListener("click", e => {
+      if (!e.target.closest(".ba-module")) {
+        document.querySelectorAll(".ba-module.is-open").forEach(m => m.classList.remove("is-open"));
       }
-  }
+    });
+  })();
 
+  /* ============================================================
+     Bootstrap-Table Locale (DK) + defaults
+     ============================================================ */
+  $.extend($.fn.bootstrapTable.defaults, {
+    formatAllRows:        () => 'Alle',
+    formatLoadingMessage: () => 'Indlæser, vent venligst...',
+    formatSearch:         () => 'Søg…',
+    formatShowingRows:    (from, to, total) => `Viser ${from} – ${to} af ${total} linjer`,
+    formatRecordsPerPage: n => `${n} pr. side`,
+    formatNoMatches:      () => 'Ingen rækker',
+  });
+
+  /* ============================================================
+     Confirmation modal — drop-in replacement for native confirm().
+     Usage:
+       const ok = await baConfirm("Are you sure?", { okLabel: "Ja", variant: "danger" });
+     ============================================================ */
+  window.baConfirm = function(message, opts = {}) {
+    const {
+      title    = "Bekræft handling",
+      okLabel  = "OK",
+      variant  = "primary",       // primary / success / danger / warning
+      icon     = "bi-question-circle",
+    } = opts;
+
+    return new Promise(resolve => {
+      const modalEl = document.getElementById("baConfirmModal");
+      document.getElementById("baConfirmTitle").textContent   = title;
+      document.getElementById("baConfirmMessage").innerHTML   = message;
+      const iconEl = document.getElementById("baConfirmIcon");
+      iconEl.className = `bi ${icon} me-2`;
+      const okBtn = document.getElementById("baConfirmOk");
+      okBtn.textContent = okLabel;
+      okBtn.className = `btn btn-${variant}`;
+
+      const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+      let resolved = false;
+      const finish = (value) => {
+        if (resolved) return;
+        resolved = true;
+        okBtn.removeEventListener("click", onOk);
+        modalEl.removeEventListener("hidden.bs.modal", onHide);
+        resolve(value);
+      };
+      const onOk = () => { finish(true);  modal.hide(); };
+      const onHide = () => finish(false);
+
+      okBtn.addEventListener("click", onOk);
+      modalEl.addEventListener("hidden.bs.modal", onHide);
+      modal.show();
+    });
+  };
+
+  /* ============================================================
+     Toast helper
+     ============================================================ */
+  window.baToast = function(msg, variant = "primary") {
+    const wrap = document.getElementById("toastWrap");
+    const el = document.createElement("div");
+    el.className = `toast align-items-center text-bg-${variant} border-0 show`;
+    el.innerHTML = `
+      <div class="d-flex">
+        <div class="toast-body">${msg}</div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+      </div>`;
+    wrap.appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+  };
+
+  /* ============================================================
+     Shared formatters
+     ============================================================ */
+  window.MONTH_NAME_TO_NUM = {
+    "Januar": 1, "Februar": 2, "Marts": 3, "April": 4,
+    "Maj": 5, "Juni": 6, "Juli": 7, "August": 8,
+    "September": 9, "Oktober": 10, "November": 11, "December": 12
+  };
+
+  window.STATUS_LABEL = {
+    "Ny":             { label: "Ny",              cls: "ba-chip-ny" },
+    "TilFakturering": { label: "Godkendt",        cls: "ba-chip-godkendt" },
+    "Faktureret":     { label: "Faktureret",      cls: "ba-chip-faktureret" },
+    "FakturerIkke":   { label: "Fakturer ikke",   cls: "ba-chip-ikke" },
+  };
+
+  window.statusFormatter = function(value) {
+    const v = window.STATUS_LABEL[value] || { label: value || "-", cls: "ba-chip-inaktiv" };
+    return `<span class="ba-chip ${v.cls}"><span class="dot"></span>${v.label}</span>`;
+  };
+
+  window.zoneFormatter = function(value) {
+    if (!value) return "";
+    return `<span class="ba-chip ba-chip-zone">${value}</span>`;
+  };
+
+  window.lokationFormatter = function(value) {
+    if (!value) return "";
+    return `<span class="ba-chip ba-chip-lokation">${value}</span>`;
+  };
+
+  window.arealFormatter = function(value) {
+    if (value === null || value === undefined || value === "") return "";
+    return `<span class="ba-num">${parseFloat(value).toFixed(0)} m²</span>`;
+  };
+
+  window.facadeFormatter = function(value) {
+    if (value === null || value === undefined || value === "") return "";
+    return `<span class="ba-num">${parseFloat(value).toFixed(1)} m</span>`;
+  };
+
+  window.priceFormatter = function(value) {
+    if (value === null || value === undefined || value === "") return "";
+    const n = parseFloat(value);
+    if (isNaN(n)) return "";
+    return `<span class="ba-num">${n.toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}&nbsp;kr</span>`;
+  };
+
+  /* ----- CVR validity (Danish mod-11 weights 2,7,6,5,4,3,2) ----- */
+  window.isValidCvr = function(cvr) {
+    if (cvr === null || cvr === undefined) return false;
+    const digits = String(cvr).replace(/\D/g, "");
+    if (digits.length !== 8) return false;
+    const w = [2, 7, 6, 5, 4, 3, 2, 1];
+    let sum = 0;
+    for (let i = 0; i < 8; i++) sum += parseInt(digits[i], 10) * w[i];
+    return sum % 11 === 0;
+  };
+
+  window.cvrFormatter = function(value) {
+    if (value === null || value === undefined || value === "") return "";
+    if (window.isValidCvr(value)) {
+      return `<span class="ba-num">${value}</span>`;
+    }
+    return `<span class="ba-num text-danger" title="Ugyldigt CVR-nummer (mod-11 check fejler)">
+              <i class="bi bi-exclamation-triangle-fill me-1"></i>${value}
+            </span>`;
+  };
+
+  window.linkFormatter = function(value, row) {
+    if (!row) return '';
+    const id = row.DeskproID || row.Id;
+    if (!id) return '';
+    return `<a class="text-decoration-none fw-semibold" href="https://ans.brugaarhus.dk/app#/t/ticket/${id}" target="_blank"><i class="bi bi-box-arrow-up-right me-1"></i>${id}</a>`;
+  };
+
+  window.dateFormatter = function(value) {
+    if (!value) return "";
+    try {
+      const d = new Date(value);
+      const day   = String(d.getDate()).padStart(2, "0");
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const year  = d.getFullYear();
+      return `${day}-${month}-${year}`;
+    } catch {
+      return value;
+    }
+  };
+
+  window.maanedAarFormatter = function(value, row) {
+    return `${row.FakturaMaaned} ${row.FakturaAar}`;
+  };
+
+  window.boolFormatter = function(value) {
+    return (value === true || value === 1 || value === "1") ? "Ja" : "Nej";
+  };
+
+  /* ============================================================
+     Synkroniser
+     ============================================================ */
+  document.getElementById("resetTriggerBtn")?.addEventListener("click", async () => {
+    const ok = await baConfirm(
+      "Igangsæt synkronisering? Det tager typisk 1–2 minutter, og siden skal opdateres bagefter.",
+      { title: "Synkroniser", okLabel: "Start", variant: "primary", icon: "bi-arrow-repeat" }
+    );
+    if (!ok) return;
+    try {
+      const r = await fetch("/udeservering/api/run_refresh", { method: "POST" });
+      const j = await r.json();
+      baToast(j.success ? "Synkronisering igangsat" : "Kunne ikke starte synkronisering", j.success ? "primary" : "danger");
+    } catch {
+      baToast("Synkronisering fejlede", "danger");
+    }
+  });
 </script>
 
 {% block extra_js %}{% endblock %}
