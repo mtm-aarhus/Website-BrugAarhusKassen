@@ -382,6 +382,20 @@
     .ba-chip-zone     { color: #b45309; background: rgba(180,83,9,.1);    border-color: rgba(180,83,9,.25); }
     .ba-chip-lokation { color: #0e7490; background: rgba(14,116,144,.1);  border-color: rgba(14,116,144,.25); }
 
+    /* Dynamic per-value chip: hue picked by hashing the value so the same zone
+       or lokation gets the same color every time, but distinct values clearly
+       differ from each other. --ba-chip-hue is set inline by the formatter. */
+    .ba-chip-dyn {
+      color: hsl(var(--ba-chip-hue, 220), 65%, 30%);
+      background: hsla(var(--ba-chip-hue, 220), 70%, 50%, .13);
+      border-color: hsla(var(--ba-chip-hue, 220), 60%, 50%, .28);
+    }
+    [data-bs-theme="dark"] .ba-chip-dyn {
+      color: hsl(var(--ba-chip-hue, 220), 70%, 78%);
+      background: hsla(var(--ba-chip-hue, 220), 65%, 55%, .17);
+      border-color: hsla(var(--ba-chip-hue, 220), 55%, 55%, .32);
+    }
+
     .ba-num { font-variant-numeric: tabular-nums; }
 
     /* Toast */
@@ -472,7 +486,7 @@
   <div class="container-fluid" style="max-width:1600px;">
 
     <!-- Brand -->
-    <a class="navbar-brand" href="{{ url_for('udeservering.applications') }}">
+    <a class="navbar-brand" href="{{ url_for('udeservering.tilladelser') }}">
       <picture>
         <source srcset="{{ url_for('static', filename='aak-logo-dark.svg') }}" media="(prefers-color-scheme: dark)">
         <img src="{{ url_for('static', filename='aak-logo.svg') }}" alt="AAK Logo">
@@ -492,7 +506,7 @@
       <!-- Modules -->
       <div class="ba-nav-modules ms-lg-3">
 
-        <div class="ba-module {% if page_key in ['applications','til_godkendelse','godkendte_fakturaer','faktureret','fakturer_ikke','statistik','parametre'] %}is-active{% endif %}">
+        <div class="ba-module {% if page_key in ['tilladelser','til_godkendelse','godkendte_fakturaer','faktureret','fakturer_ikke','statistik','parametre'] %}is-active{% endif %}">
           <button class="ba-module-toggle" type="button" data-ba-toggle>
             <i class="bi bi-shop"></i>
             <span>Udeservering</span>
@@ -501,8 +515,8 @@
           <div class="ba-submenu">
 
             <div class="ba-section">Sager</div>
-            <a href="{{ url_for('udeservering.applications') }}" class="{% if page_key=='applications' %}is-active{% endif %}">
-              <i class="bi bi-files"></i>Ansøgninger
+            <a href="{{ url_for('udeservering.tilladelser') }}" class="{% if page_key=='tilladelser' %}is-active{% endif %}">
+              <i class="bi bi-files"></i>Tilladelser
             </a>
 
             <div class="ba-divider"></div>
@@ -710,14 +724,31 @@
     return `<span class="ba-chip ${v.cls}"><span class="dot"></span>${v.label}</span>`;
   };
 
+  /* Curated hue palette — values picked so each one looks distinct from its
+     neighbours and stays readable on both light and dark cards. */
+  const CHIP_HUES = [8, 30, 50, 90, 145, 175, 200, 225, 260, 295, 325, 350];
+  function _hashStr(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    return Math.abs(h);
+  }
+  function _chipHue(prefix, value) {
+    return CHIP_HUES[_hashStr(prefix + String(value)) % CHIP_HUES.length];
+  }
+  function _escapeHtml(s) {
+    return $("<div>").text(s).html();
+  }
+
   window.zoneFormatter = function(value) {
     if (!value) return "";
-    return `<span class="ba-chip ba-chip-zone">${value}</span>`;
+    const hue = _chipHue("zone:", value);
+    return `<span class="ba-chip ba-chip-dyn" style="--ba-chip-hue:${hue}">${_escapeHtml(value)}</span>`;
   };
 
   window.lokationFormatter = function(value) {
     if (!value) return "";
-    return `<span class="ba-chip ba-chip-lokation">${value}</span>`;
+    const hue = _chipHue("lokation:", value);
+    return `<span class="ba-chip ba-chip-dyn" style="--ba-chip-hue:${hue}">${_escapeHtml(value)}</span>`;
   };
 
   window.arealFormatter = function(value) {
@@ -784,6 +815,33 @@
 
   window.boolFormatter = function(value) {
     return (value === true || value === 1 || value === "1") ? "Ja" : "Nej";
+  };
+
+  /* Kommentar — truncated cell with the full text on hover. */
+  window.kommentarFormatter = function(value) {
+    if (!value) return "";
+    const esc = $("<div>").text(value).html();
+    return `<span class="d-inline-block text-truncate" style="max-width:220px"
+                  title="${esc}">${esc}</span>`;
+  };
+
+  /* Sommersæson chip.
+     - "Ja"                                → green chip
+     - "Nej" or null AND no Vintermaaneder → red "Mangler sæson" warning
+       (no months → no fakturalinjer get generated)
+     - "Nej" with Vintermaaneder set       → grey "Nej" chip
+     - null with Vintermaaneder set        → dash (only winter active) */
+  window.sommerFormatter = function(value, row) {
+    const hasVinter = !!(row && row.Vintermaaneder);
+    if (value === "Ja") return `<span class="ba-chip ba-chip-aktiv">Ja</span>`;
+    if (!hasVinter) {
+      return `<span class="ba-chip ba-chip-ikke"
+                    title="Ingen sæson valgt — der genereres ingen fakturalinjer. Ret Sommer-/Vintersæson på ansøgningen i Deskpro.">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i>Mangler sæson
+              </span>`;
+    }
+    if (value === "Nej") return `<span class="ba-chip ba-chip-inaktiv">Nej</span>`;
+    return `<span class="text-secondary">–</span>`;
   };
 
   /* ============================================================

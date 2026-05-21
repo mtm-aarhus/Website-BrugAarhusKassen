@@ -1,6 +1,8 @@
-from flask import Blueprint, render_template, request, jsonify, current_app
+from flask import Blueprint, render_template, request, jsonify, current_app, Response
 from sqlalchemy import text
 import datetime
+import csv
+import io
 from functools import lru_cache
 import requests
 import os
@@ -21,7 +23,7 @@ udeservering_bp = Blueprint("udeservering", __name__, template_folder="templates
 
 # Friendly status -> page-key mapping (for active-tab highlighting in navbar)
 PAGE_KEYS = {
-    "applications": "applications",
+    "tilladelser": "tilladelser",
     "til_godkendelse": "til_godkendelse",
     "godkendte_fakturaer": "godkendte_fakturaer",
     "faktureret": "faktureret",
@@ -103,12 +105,13 @@ def load_prisdata_for_year(year: int):
 # --------------------
 # Page routes
 # --------------------
-@udeservering_bp.route("/applications")
-def applications():
+@udeservering_bp.route("/tilladelser")
+@udeservering_bp.route("/applications")  # legacy alias
+def tilladelser():
     return render_template(
-        "applications.html",
-        page_title="Ansøgninger",
-        page_key="applications",
+        "tilladelser.html",
+        page_title="Tilladelser",
+        page_key="tilladelser",
     )
 
 
@@ -172,6 +175,7 @@ def parametre_page():
 # API endpoints
 # --------------------
 @udeservering_bp.route("/api/applications")
+@udeservering_bp.route("/api/tilladelser")
 def api_udeservering_applications():
     engine = get_engine()
 
@@ -183,13 +187,15 @@ def api_udeservering_applications():
     filter_mode = request.args.get("filter", "aktive")  # aktive | inaktive | alle
     zone = request.args.get("zone", "")
     lokation = request.args.get("lokation", "")
-    periodetype = request.args.get("periodetype", "")
+    year = request.args.get("year", "")          # filter on a specific gældende-fra year
+    month = request.args.get("month", "")        # filter on a specific gældende-fra month
 
     valid_sort_columns = {
-        "Id", "Firmanavn", "Adresse", "CVR", "Geo",
+        "Id", "Firmanavn", "Adresse", "CVR", "Att", "Geo",
         "Serveringszone", "Lokation", "Ansogningsdato",
         "Serveringsareal", "Facadelaengde", "LokationOptionId",
-        "GaeldendeFra", "GaeldendeTilOgMed", "Periodetype",
+        "GaeldendeFra", "GaeldendeTilOgMed",
+        "Sommersaeson", "Vintermaaneder",
     }
     if sort not in valid_sort_columns:
         sort = "Ansogningsdato"
@@ -207,6 +213,7 @@ def api_udeservering_applications():
                 Firmanavn LIKE :search OR
                 Adresse LIKE :search OR
                 CVR LIKE :search OR
+                Att LIKE :search OR
                 Serveringszone LIKE :search OR
                 Lokation LIKE :search
             )
@@ -221,17 +228,40 @@ def api_udeservering_applications():
         where_parts.append("Lokation = :lokation")
         params["lokation"] = lokation
 
-    if periodetype:
-        where_parts.append("Periodetype = :periodetype")
-        params["periodetype"] = periodetype
+    if year:
+        # Period filter is based on whether the tilladelse is/was active
+        # in that month/year (i.e. the [GaeldendeFra, GaeldendeTilOgMed] window
+        # overlaps with the requested month/year).
+        if month:
+            month_num = MONTH_NAME_TO_NUM.get(month)
+            if month_num:
+                where_parts.append("""
+                    DATEFROMPARTS(YEAR(GaeldendeFra), MONTH(GaeldendeFra), 1)
+                        <= DATEFROMPARTS(:year, :month_num, 1)
+                    AND (
+                        GaeldendeTilOgMed IS NULL
+                        OR DATEFROMPARTS(YEAR(GaeldendeTilOgMed), MONTH(GaeldendeTilOgMed), 1)
+                            >= DATEFROMPARTS(:year, :month_num, 1)
+                    )
+                """)
+                params["year"] = int(year)
+                params["month_num"] = month_num
+        else:
+            # Year only: tilladelse active in any month of that year.
+            where_parts.append("""
+                YEAR(GaeldendeFra) <= :year
+                AND (GaeldendeTilOgMed IS NULL OR YEAR(GaeldendeTilOgMed) >= :year)
+            """)
+            params["year"] = int(year)
 
-    # Active = today between GaeldendeFra and GaeldendeTilOgMed (month granularity).
+    # Active = the tilladelse has not been opsagt yet.
+    # `GaeldendeTilOgMed` in our DB already collapses Opsigelse (it wins over
+    # the planlagt slutdato during refresh). So:
+    #   - NULL or future month  → active
+    #   - past month            → inactive (opsagt)
+    # We intentionally don't consider GaeldendeFra — a tilladelse with a
+    # future start date is still active business-wise.
     active_expr = """
-        (
-            DATEFROMPARTS(YEAR(GaeldendeFra), MONTH(GaeldendeFra), 1)
-            <= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)
-        )
-        AND
         (
             GaeldendeTilOgMed IS NULL
             OR DATEFROMPARTS(YEAR(GaeldendeTilOgMed), MONTH(GaeldendeTilOgMed), 1)
@@ -299,13 +329,18 @@ def api_fakturering():
     month = request.args.get("month", "")
     zone = request.args.get("zone", "")
     lokation = request.args.get("lokation", "")
+    # Period filter: "current_and_earlier" -> only show fakturalinjer whose
+    # month-date <= last day of the current month. Anything else = no filter.
+    period_filter = request.args.get("period_filter", "")
+    # When truthy, hide rows where the (computed) Pris is null/0.
+    hide_zero = request.args.get("hide_zero", "").lower() in ("1", "true", "yes")
 
     sort = request.args.get("sort", "FakturaDatoSort")
     order = request.args.get("order", "desc")
 
     valid_sort_columns = {
         "FakturaDatoSort", "FakturaLinjeID", "DeskproID", "Firmanavn",
-        "Adresse", "FakturaMaaned", "FakturaAar", "Lokation",
+        "Adresse", "Att", "FakturaMaaned", "FakturaAar", "Lokation",
         "Serveringszone", "Serveringsareal", "Facadelaengde", "Pris",
         "FakturaStatus",
     }
@@ -331,6 +366,7 @@ def api_fakturering():
                OR Adresse LIKE :search
                OR DeskproID LIKE :search
                OR CVR LIKE :search
+               OR Att LIKE :search
             )
         """)
         params["search"] = f"%{search}%"
@@ -351,25 +387,26 @@ def api_fakturering():
         where_parts.append("Lokation = :lokation")
         params["lokation"] = lokation
 
+    if period_filter == "current_and_earlier":
+        # Include the current month and everything before it.
+        where_parts.append(
+            "FakturaDatoSort <= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)"
+        )
+
     base_where = "WHERE " + " AND ".join(where_parts)
 
-    query = f"""
+    # For status=Ny, Pris is computed on-read (DB column is NULL until godkendt).
+    # We therefore fetch ALL matching rows, compute prices, optionally drop
+    # 0-kr rows, then sort/paginate in Python. This keeps the summary KPIs
+    # accurate AND lets hide_zero work without breaking pagination math.
+    # For locked statuses (TilFakturering/Faktureret/FakturerIkke), Pris lives
+    # in the DB so we use plain SQL pagination + SUM.
+    all_query = f"""
         SELECT *
         FROM BrugAarhus_Udeservering_Fakturalinjer
         {base_where}
-        ORDER BY {sort} {order}
-        OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
     """
 
-    count_query = f"""
-        SELECT COUNT(*)
-        FROM BrugAarhus_Udeservering_Fakturalinjer
-        {base_where}
-    """
-
-    # For status=Ny, Pris is NULL in DB (computed on-read), so SUM(Pris) would be 0.
-    # We compute the summary by fetching all matching rows and pricing them in Python.
-    # For other statuses, Pris is locked in DB and we can SUM directly.
     sum_query_locked = f"""
         SELECT
             COUNT(*) AS cnt,
@@ -379,25 +416,13 @@ def api_fakturering():
         {base_where}
     """
 
-    all_rows_for_ny_query = f"""
-        SELECT Serveringszone, Lokation, Serveringsareal, Facadelaengde,
-               FakturaMaaned, FakturaAar, DeskproID
-        FROM BrugAarhus_Udeservering_Fakturalinjer
-        {base_where}
-    """
+    sort_desc = (order.lower() == "desc")
 
     with engine.begin() as conn:
-        rows = conn.execute(text(query), params).mappings().all()
-        total = conn.execute(text(count_query), params).scalar()
-
         if status == "Ny":
-            all_rows = conn.execute(text(all_rows_for_ny_query), params).mappings().all()
-            sum_pris = 0.0
-            firms = set()
-            cnt = 0
+            # Fetch everything matching, price it, optionally hide zeros, then paginate.
+            all_rows = [dict(r) for r in conn.execute(text(all_query), params).mappings().all()]
             for r in all_rows:
-                cnt += 1
-                firms.add(r["DeskproID"])
                 month_num = MONTH_NAME_TO_NUM.get(
                     (r["FakturaMaaned"] or "").split(" ")[0], 0
                 )
@@ -409,38 +434,42 @@ def api_fakturering():
                     month_num,
                     r["FakturaAar"],
                 )
-                if calc.get("ok"):
-                    sum_pris += calc["belob"]
-            summary = {"lines": cnt, "firms": len(firms), "sum_pris": sum_pris}
+                r["Pris"] = calc["belob"] if calc.get("ok") else None
+
+            if hide_zero:
+                all_rows = [r for r in all_rows if r["Pris"] is not None and r["Pris"] > 0]
+
+            # Summary across the (possibly filtered) result set.
+            sum_pris = sum(r["Pris"] for r in all_rows if r["Pris"] is not None)
+            firms = {r["DeskproID"] for r in all_rows}
+            summary = {"lines": len(all_rows), "firms": len(firms), "sum_pris": sum_pris}
+
+            # Sort + paginate in Python.
+            def _key(r):
+                v = r.get(sort)
+                # Sort Nones last regardless of direction.
+                return (v is None, v if v is not None else 0)
+            all_rows.sort(key=_key, reverse=sort_desc)
+            total = len(all_rows)
+            final_rows = all_rows[offset:offset + limit]
         else:
+            count_sql = f"SELECT COUNT(*) FROM BrugAarhus_Udeservering_Fakturalinjer {base_where}"
+            page_sql = f"""
+                SELECT *
+                FROM BrugAarhus_Udeservering_Fakturalinjer
+                {base_where}
+                ORDER BY {sort} {order}
+                OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
+            """
+            rows = conn.execute(text(page_sql), params).mappings().all()
+            total = conn.execute(text(count_sql), params).scalar()
             s = conn.execute(text(sum_query_locked), params).mappings().first()
             summary = {
                 "lines": s["cnt"],
                 "firms": s["firms"],
                 "sum_pris": float(s["sum_pris"] or 0),
             }
-
-        final_rows = []
-        for r in rows:
-            r = dict(r)
-            row_status = r.get("FakturaStatus", "")
-
-            # Don't recalc once priced/approved
-            if row_status in ("Faktureret", "TilFakturering"):
-                final_rows.append(r)
-                continue
-
-            zone_val = r.get("Serveringszone")
-            lokation_val = r.get("Lokation")
-            areal = float(r.get("Serveringsareal") or 0)
-            facade = float(r.get("Facadelaengde") or 0)
-
-            month_name = (r["FakturaMaaned"] or "").split(" ")[0]
-            month_num = MONTH_NAME_TO_NUM.get(month_name, 0)
-
-            calc = beregn_pris(zone_val, lokation_val, areal, facade, month_num, r["FakturaAar"])
-            r["Pris"] = calc["belob"] if calc["ok"] else None
-            final_rows.append(r)
+            final_rows = [dict(r) for r in rows]
 
     return jsonify({
         "total": total,
@@ -568,25 +597,36 @@ def api_fakturering_bulk_godkend():
                 "invalid_ids": [r["FakturaLinjeID"] for r in invalid_cvr_rows],
             }), 400
 
-        approved = 0
+        # Compute prices up-front and refuse if any line ends up at 0/negative —
+        # afgiftsfri lines shouldn't go to SAP.
+        priced = []
         for row in rows:
-            row_status = row["FakturaStatus"]
-
-            if row_status in ("Faktureret", "TilFakturering"):
+            if row["FakturaStatus"] in ("Faktureret", "TilFakturering"):
                 continue
-
             zone = row["Serveringszone"]
             lokation = row["Lokation"]
             areal = float(row["Serveringsareal"] or 0)
             facade = float(row["Facadelaengde"] or 0)
-
             month_name = (row["FakturaMaaned"] or "").split(" ")[0]
             month_num = MONTH_NAME_TO_NUM.get(month_name, 0)
             year = int(row["FakturaAar"])
-
             calc = beregn_pris(zone, lokation, areal, facade, month_num, year)
             pris = calc["belob"] if calc.get("ok") else None
+            priced.append((row, pris))
 
+        zero_rows = [r for (r, p) in priced if p is None or p <= 0]
+        if zero_rows:
+            return jsonify({
+                "success": False,
+                "error": (
+                    f"Kan ikke godkende: {len(zero_rows)} linje(r) er afgiftsfri (pris 0 eller negativ). "
+                    f"Marker disse som \"fakturer ikke\" i stedet."
+                ),
+                "invalid_ids": [r["FakturaLinjeID"] for r in zero_rows],
+            }), 400
+
+        approved = 0
+        for (row, pris) in priced:
             conn.execute(text("""
                 UPDATE BrugAarhus_Udeservering_Fakturalinjer
                 SET Pris = :pris,
@@ -656,7 +696,8 @@ def api_fakturering_update():
     if not new_status:
         return jsonify({"success": False, "error": "Ugyldig handling"})
 
-    # Block godkend if CVR isn't valid — SAP would reject the invoice anyway.
+    # Block godkend if CVR isn't valid — SAP would reject the invoice anyway —
+    # and refuse to approve afgiftsfri linjer (pris 0 or negative).
     if action == "godkend":
         engine = get_engine()
         with engine.begin() as conn:
@@ -667,6 +708,17 @@ def api_fakturering_update():
             return jsonify({
                 "success": False,
                 "error": "Ugyldigt CVR-nummer. Ret CVR i Deskpro og kør synkronisering før godkendelse.",
+            }), 400
+
+        pris_val = _to_decimal_or_none(data.get("Pris"))
+        try:
+            pris_num = float(pris_val) if pris_val is not None else None
+        except (TypeError, ValueError):
+            pris_num = None
+        if pris_num is None or pris_num <= 0:
+            return jsonify({
+                "success": False,
+                "error": "Pris er 0 eller negativ — afgiftsfri linjer kan ikke godkendes. Brug \"Fakturer ikke\" i stedet.",
             }), 400
 
     # Editable fields - empty strings on numeric fields become NULL.
@@ -861,11 +913,11 @@ def api_udeservering_statistik_table():
                 Firmanavn,
                 Adresse,
                 CVR,
+                Att,
                 Serveringszone,
                 Lokation,
                 Serveringsareal,
                 Facadelaengde,
-                Periodetype,
                 GaeldendeFra,
                 GaeldendeTilOgMed
             FROM dbo.BrugAarhus_Udeservering
@@ -875,7 +927,29 @@ def api_udeservering_statistik_table():
     return jsonify({"total": len(rows), "rows": [dict(r) for r in rows]})
 
 
-def beregn_pris(zone, lokation, serveringsareal, facadelaengde, month, year):
+# Deskpro option IDs for FIELD_LOKATION (1192). Mirrors process.py in the
+# refresh repo so the two stay in sync.
+OPT_LOKATION_FACADE = 1193   # "Facade og nærliggende areal"
+OPT_LOKATION_TORV = 1194     # "Nærliggende torv/plads"
+OPT_LOKATION_PARKLET = 1195  # "Parklet"
+
+
+def _is_facade(lokation_option_id, lokation_text):
+    """Prefer the Deskpro option id; fall back to a prefix check on the title
+    for rows that pre-date the LokationOptionId column."""
+    if lokation_option_id is not None:
+        try:
+            return int(lokation_option_id) == OPT_LOKATION_FACADE
+        except (TypeError, ValueError):
+            pass
+    # Legacy fallback. Works for both the old title ("Ved facade, og evt. ekstra areal")
+    # and the new one ("Facade og nærliggende areal"). "Nærliggende torv/plads"
+    # also contains "facade" mid-string, so anchor on the prefix.
+    txt = (lokation_text or "").strip().lower()
+    return txt.startswith("facade") or txt.startswith("ved facade")
+
+
+def beregn_pris(zone, lokation, serveringsareal, facadelaengde, month, year, lokation_option_id=None):
     data = load_prisdata_for_year(year)
 
     params = data["params"]
@@ -897,7 +971,7 @@ def beregn_pris(zone, lokation, serveringsareal, facadelaengde, month, year):
 
     brutto = max(float(serveringsareal or 0), min_areal)
 
-    if lokation == "Ved facade":
+    if _is_facade(lokation_option_id, lokation):
         netto = max(brutto - float(facadelaengde or 0) * facadebredde, 0)
     else:
         netto = brutto
@@ -922,12 +996,14 @@ def api_beregn_pris():
 
     zone = data.get("Zone")
     lokation = data.get("Lokation")
+    lokation_option_id = data.get("LokationOptionId")
     areal = float(data.get("Serveringsareal") or 0)
     facade = float(data.get("Facadelaengde") or 0)
     month = int(data.get("Month") or 0)
     year = int(data.get("Year") or datetime.date.today().year)
 
-    result = beregn_pris(zone, lokation, areal, facade, month, year)
+    result = beregn_pris(zone, lokation, areal, facade, month, year,
+                         lokation_option_id=lokation_option_id)
 
     return jsonify({"success": result["ok"], "data": result})
 
@@ -991,6 +1067,264 @@ def api_udeservering_statistik_metrics():
         "per_zone": [dict(r) | {"SumPris": float(r["SumPris"] or 0)} for r in per_zone],
         "per_year": [dict(r) | {"SumPris": float(r["SumPris"] or 0)} for r in per_year],
     })
+
+
+# ---------------------------------------------------------------------------
+#  Filtered statistik: KPIs, breakdowns (zone/lokation/status/month), top tilladelser,
+#  and the underlying detail rows. All grouped under a single query so a single
+#  filter change re-renders the entire dashboard.
+# ---------------------------------------------------------------------------
+def _statistik_filter_clause(args, params):
+    """Build the WHERE clause for the filtered statistik queries."""
+    where = ["1=1"]
+
+    year = args.get("year", "")
+    if year:
+        where.append("FakturaAar = :year")
+        params["year"] = int(year)
+
+    month = args.get("month", "")
+    if month:
+        where.append("FakturaMaaned = :month")
+        params["month"] = month
+
+    status = args.get("status", "")
+    if status:
+        where.append("FakturaStatus = :status")
+        params["status"] = status
+
+    zone = args.get("zone", "")
+    if zone:
+        where.append("Serveringszone = :zone")
+        params["zone"] = zone
+
+    lokation = args.get("lokation", "")
+    if lokation:
+        where.append("Lokation = :lokation")
+        params["lokation"] = lokation
+
+    search = args.get("search", "")
+    if search:
+        where.append(
+            "(Firmanavn LIKE :search OR Adresse LIKE :search OR DeskproID LIKE :search OR CVR LIKE :search)"
+        )
+        params["search"] = f"%{search}%"
+
+    return "WHERE " + " AND ".join(where)
+
+
+def _price_row(r):
+    """Return the effective Pris for a fakturalinje row, computing live for Ny lines."""
+    status_val = r.get("FakturaStatus")
+    if status_val in ("Faktureret", "TilFakturering", "FakturerIkke"):
+        # Stored price is authoritative once locked.
+        return float(r["Pris"]) if r.get("Pris") is not None else 0.0
+    # Ny rows: compute live.
+    month_num = MONTH_NAME_TO_NUM.get((r.get("FakturaMaaned") or "").split(" ")[0], 0)
+    try:
+        calc = beregn_pris(
+            r.get("Serveringszone"),
+            r.get("Lokation"),
+            float(r.get("Serveringsareal") or 0),
+            float(r.get("Facadelaengde") or 0),
+            month_num,
+            r.get("FakturaAar"),
+        )
+    except Exception:
+        return 0.0
+    return float(calc["belob"]) if calc.get("ok") else 0.0
+
+
+@udeservering_bp.route("/api/statistik/filtered")
+def api_statistik_filtered():
+    """Single dashboard endpoint: returns KPIs, breakdowns, monthly trend, and top tilladelser."""
+    engine = get_engine()
+    params = {}
+    where_sql = _statistik_filter_clause(request.args, params)
+
+    with engine.begin() as conn:
+        rows = [
+            dict(r)
+            for r in conn.execute(text(f"""
+                SELECT *
+                FROM BrugAarhus_Udeservering_Fakturalinjer
+                {where_sql}
+            """), params).mappings().all()
+        ]
+
+    # Compute live price for each row (needed because Ny rows have NULL Pris in DB).
+    for r in rows:
+        r["EffectivePris"] = _price_row(r)
+
+    # ------- KPIs -------
+    total_rows = len(rows)
+    total_sum = sum(r["EffectivePris"] for r in rows)
+    unique_firms = len({r["DeskproID"] for r in rows})
+    avg_pris = (total_sum / total_rows) if total_rows else 0.0
+
+    # ------- Breakdowns -------
+    def _accum(key_fn):
+        agg = {}
+        for r in rows:
+            key = key_fn(r) or "Ukendt"
+            cur = agg.setdefault(key, {"count": 0, "sum": 0.0})
+            cur["count"] += 1
+            cur["sum"] += r["EffectivePris"]
+        return [
+            {"key": k, "count": v["count"], "sum": v["sum"]}
+            for k, v in sorted(agg.items(), key=lambda kv: (-kv[1]["sum"], kv[0]))
+        ]
+
+    per_status = _accum(lambda r: r.get("FakturaStatus"))
+    per_zone = _accum(lambda r: r.get("Serveringszone"))
+    per_lokation = _accum(lambda r: r.get("Lokation"))
+
+    # ------- Monthly trend: 12 months for the selected year if any,
+    #         otherwise the union of years in the filtered set.
+    # Build entries keyed by "YYYY-MM" so the chart can display them in order.
+    months_agg = {}
+    for r in rows:
+        m = MONTH_NAME_TO_NUM.get((r.get("FakturaMaaned") or "").split(" ")[0], 0)
+        y = r.get("FakturaAar") or 0
+        if not m or not y:
+            continue
+        key = f"{y}-{m:02d}"
+        cur = months_agg.setdefault(key, {"year": y, "month": m, "count": 0, "sum": 0.0})
+        cur["count"] += 1
+        cur["sum"] += r["EffectivePris"]
+    monthly = [
+        {"key": k, **v}
+        for k, v in sorted(months_agg.items())
+    ]
+
+    # ------- Top 10 tilladelser by total amount (handy in monthly review).
+    top_agg = {}
+    for r in rows:
+        pid = r.get("DeskproID")
+        if not pid:
+            continue
+        cur = top_agg.setdefault(pid, {
+            "DeskproID": pid,
+            "Firmanavn": r.get("Firmanavn") or "",
+            "Adresse": r.get("Adresse") or "",
+            "count": 0,
+            "sum": 0.0,
+        })
+        cur["count"] += 1
+        cur["sum"] += r["EffectivePris"]
+    top_tilladelser = sorted(top_agg.values(), key=lambda x: -x["sum"])[:10]
+
+    return jsonify({
+        "kpi": {
+            "lines": total_rows,
+            "firms": unique_firms,
+            "sum_pris": round(total_sum, 2),
+            "avg_pris": round(avg_pris, 2),
+        },
+        "per_status": per_status,
+        "per_zone": per_zone,
+        "per_lokation": per_lokation,
+        "monthly": monthly,
+        "top_tilladelser": top_tilladelser,
+    })
+
+
+@udeservering_bp.route("/api/statistik/filter_options")
+def api_statistik_filter_options():
+    """Distinct values that populate the statistik filter dropdowns."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        years = [r[0] for r in conn.execute(text("""
+            SELECT DISTINCT FakturaAar FROM BrugAarhus_Udeservering_Fakturalinjer
+            ORDER BY FakturaAar DESC
+        """)).fetchall()]
+        zones = [r[0] for r in conn.execute(text("""
+            SELECT DISTINCT Serveringszone FROM BrugAarhus_Udeservering_Fakturalinjer
+            WHERE Serveringszone IS NOT NULL AND Serveringszone <> ''
+            ORDER BY Serveringszone
+        """)).fetchall()]
+        lokationer = [r[0] for r in conn.execute(text("""
+            SELECT DISTINCT Lokation FROM BrugAarhus_Udeservering_Fakturalinjer
+            WHERE Lokation IS NOT NULL AND Lokation <> ''
+            ORDER BY Lokation
+        """)).fetchall()]
+    return jsonify({"years": years, "zones": zones, "lokationer": lokationer})
+
+
+@udeservering_bp.route("/api/statistik/csv")
+def api_statistik_csv():
+    """Export the filtered fakturalinjer as CSV in Danish locale:
+       ';' as field separator, ',' as decimal, dates as dd-mm-yyyy.
+       Returns a BOM-prefixed UTF-8 file so Excel opens it cleanly."""
+    engine = get_engine()
+    params = {}
+    where_sql = _statistik_filter_clause(request.args, params)
+
+    with engine.begin() as conn:
+        rows = [
+            dict(r)
+            for r in conn.execute(text(f"""
+                SELECT *
+                FROM BrugAarhus_Udeservering_Fakturalinjer
+                {where_sql}
+                ORDER BY FakturaDatoSort, FakturaLinjeID
+            """), params).mappings().all()
+        ]
+    for r in rows:
+        r["EffectivePris"] = _price_row(r)
+
+    def _da_num(v, decimals=2):
+        if v is None or v == "":
+            return ""
+        try:
+            return f"{float(v):.{decimals}f}".replace(".", ",")
+        except (TypeError, ValueError):
+            return str(v)
+
+    def _da_date(v):
+        if v is None or v == "":
+            return ""
+        if hasattr(v, "strftime"):
+            return v.strftime("%d-%m-%Y")
+        return str(v)
+
+    buf = io.StringIO()
+    buf.write("﻿")  # UTF-8 BOM so Excel auto-detects encoding
+    writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n")
+
+    writer.writerow([
+        "FakturaLinjeID", "DeskproID", "Firmanavn", "Att", "Adresse",
+        "CVR", "Zone", "Lokation", "Areal (m²)", "Facade (m)",
+        "Periode", "FakturaAar", "Pris (kr)", "Status", "Kommentar",
+        "Ansøgningsdato",
+    ])
+    for r in rows:
+        writer.writerow([
+            r.get("FakturaLinjeID") or "",
+            r.get("DeskproID") or "",
+            r.get("Firmanavn") or "",
+            r.get("Att") or "",
+            r.get("Adresse") or "",
+            r.get("CVR") or "",
+            r.get("Serveringszone") or "",
+            r.get("Lokation") or "",
+            _da_num(r.get("Serveringsareal")),
+            _da_num(r.get("Facadelaengde")),
+            r.get("FakturaMaaned") or "",
+            r.get("FakturaAar") or "",
+            _da_num(r.get("EffectivePris")),
+            r.get("FakturaStatus") or "",
+            (r.get("Kommentar") or "").replace("\r", " ").replace("\n", " "),
+            _da_date(r.get("Ansogningsdato")),
+        ])
+
+    today = datetime.date.today().isoformat()
+    filename = f"BrugAarhus_statistik_{today}.csv"
+    return Response(
+        buf.getvalue(),
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @udeservering_bp.route("/api/run_refresh", methods=["POST"])

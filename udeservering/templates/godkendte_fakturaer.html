@@ -110,6 +110,7 @@
           <th data-field="Serveringsareal" data-sortable="true" data-formatter="arealFormatter"  class="text-end">Areal</th>
           <th data-field="Facadelaengde"   data-sortable="true" data-formatter="facadeFormatter" class="text-end">Facade</th>
           <th data-field="Pris"            data-sortable="true" data-formatter="priceFormatter"  class="text-end">Pris</th>
+          <th data-field="Kommentar"       data-formatter="kommentarFormatter">Kommentar</th>
         </tr>
       </thead>
     </table>
@@ -294,6 +295,7 @@ function renderGroupedPage() {
         <td class="text-end">${arealFormatter(r.Serveringsareal)}</td>
         <td class="text-end">${facadeFormatter(r.Facadelaengde)}</td>
         <td class="text-end">${priceFormatter(r.Pris)}</td>
+        <td>${kommentarFormatter(r.Kommentar)}</td>
       </tr>`).join("");
 
     return `
@@ -322,6 +324,7 @@ function renderGroupedPage() {
                 <th class="text-end">Areal</th>
                 <th class="text-end">Facade</th>
                 <th class="text-end">Pris</th>
+                <th>Kommentar</th>
               </tr>
             </thead>
             <tbody>${rowsHtml}</tbody>

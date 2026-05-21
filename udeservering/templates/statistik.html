@@ -1,118 +1,156 @@
 {% extends "udeservering.html" %}
 
+{% block extra_head %}
+<script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
+<style>
+  .ba-chart-card { padding: 1rem 1.1rem; }
+  .ba-chart-card h6 { font-weight: 600; margin-bottom: .85rem; font-size: .82rem;
+                      text-transform: uppercase; letter-spacing: .07em; color: var(--ba-muted); }
+  .ba-chart-canvas-wrap { position: relative; height: 260px; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="ba-page-head">
   <div>
     <h1 class="ba-page-title"><i class="bi bi-graph-up me-2"></i>Statistik</h1>
-    <p class="ba-page-sub">Oversigt over fakturalinjer og ansøgninger på tværs af status, zone og år.</p>
+    <p class="ba-page-sub">
+      Overblik over fakturalinjer. Filtrér på periode, status, zone og lokation —
+      KPI'er, fordelinger og trendgrafen opdateres samtidig. Download som CSV
+      (semikolonseparator, danske decimaler) til Excel/SAP.
+    </p>
   </div>
 </div>
 
-<!-- Top KPIs -->
+<!-- Filter bar -->
+<div class="ba-filterbar">
+  <span class="ba-filterbar-label">Søg</span>
+  <input id="filterSearch" type="search" class="form-control form-control-sm"
+         style="width:220px" placeholder="Navn, adresse, CVR…">
+
+  <span class="ba-filterbar-label ms-2">År</span>
+  <select id="filterYear" class="form-select form-select-sm" style="width:110px">
+    <option value="">Alle</option>
+  </select>
+
+  <span class="ba-filterbar-label ms-2">Måned</span>
+  <select id="filterMonth" class="form-select form-select-sm" style="width:130px">
+    <option value="">Alle</option>
+    <option>Januar</option><option>Februar</option><option>Marts</option><option>April</option>
+    <option>Maj</option><option>Juni</option><option>Juli</option><option>August</option>
+    <option>September</option><option>Oktober</option><option>November</option><option>December</option>
+  </select>
+
+  <span class="ba-filterbar-label ms-2">Status</span>
+  <select id="filterStatus" class="form-select form-select-sm" style="width:150px">
+    <option value="">Alle</option>
+    <option value="Ny">Til godkendelse</option>
+    <option value="TilFakturering">Godkendt</option>
+    <option value="Faktureret">Faktureret</option>
+    <option value="FakturerIkke">Fakturer ikke</option>
+  </select>
+
+  <span class="ba-filterbar-label ms-2">Zone</span>
+  <select id="filterZone" class="form-select form-select-sm" style="width:120px">
+    <option value="">Alle</option>
+  </select>
+
+  <span class="ba-filterbar-label ms-2">Lokation</span>
+  <select id="filterLokation" class="form-select form-select-sm" style="width:240px">
+    <option value="">Alle</option>
+  </select>
+
+  <button id="btnClearFilters" type="button" class="btn btn-sm btn-outline-secondary ms-2">
+    <i class="bi bi-x-circle me-1"></i>Nulstil
+  </button>
+
+  <div class="ba-spacer"></div>
+
+  <button id="btnDownloadCsv" type="button" class="btn btn-sm btn-primary">
+    <i class="bi bi-download me-1"></i>Download CSV
+  </button>
+</div>
+
+<!-- KPI cards -->
 <div class="row g-3 mb-3">
   <div class="col-6 col-md-3">
     <div class="ba-card ba-card-body ba-kpi">
-      <span class="ba-kpi-label">Ansøgninger</span>
-      <span class="ba-kpi-value ba-num" id="kpiApps">–</span>
-      <span class="ba-kpi-foot" id="kpiFirms">–</span>
+      <span class="ba-kpi-label">Linjer</span>
+      <span class="ba-kpi-value ba-num" id="kpiLines">–</span>
+      <span class="ba-kpi-foot">Filtreret antal</span>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="ba-card ba-card-body ba-kpi">
-      <span class="ba-kpi-label">Til godkendelse</span>
-      <span class="ba-kpi-value ba-num" id="kpiNyCnt">–</span>
-      <span class="ba-kpi-foot" id="kpiNySum">–</span>
+      <span class="ba-kpi-label">Unikke tilladelser</span>
+      <span class="ba-kpi-value ba-num" id="kpiFirms">–</span>
+      <span class="ba-kpi-foot">Tilladelser</span>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="ba-card ba-card-body ba-kpi">
-      <span class="ba-kpi-label">Godkendt</span>
-      <span class="ba-kpi-value ba-num" id="kpiTilfaktCnt">–</span>
-      <span class="ba-kpi-foot" id="kpiTilfaktSum">–</span>
+      <span class="ba-kpi-label">Samlet beløb</span>
+      <span class="ba-kpi-value ba-num" id="kpiSum">–</span>
+      <span class="ba-kpi-foot">Sum i kr.</span>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="ba-card ba-card-body ba-kpi">
-      <span class="ba-kpi-label">Faktureret</span>
-      <span class="ba-kpi-value ba-num" id="kpiFaktCnt">–</span>
-      <span class="ba-kpi-foot" id="kpiFaktSum">–</span>
+      <span class="ba-kpi-label">Gns. pris pr. linje</span>
+      <span class="ba-kpi-value ba-num" id="kpiAvg">–</span>
+      <span class="ba-kpi-foot">Sum / antal</span>
     </div>
   </div>
 </div>
 
-<!-- Breakdown -->
+<!-- Charts: monthly trend (full row) -->
 <div class="row g-3 mb-3">
-  <div class="col-12 col-lg-6">
-    <div class="ba-card">
-      <div class="ba-card-body">
-        <h5 class="mb-3"><i class="bi bi-grid me-2"></i>Pr. zone</h5>
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0" id="zoneTable">
-            <thead>
-              <tr>
-                <th>Zone</th>
-                <th class="text-end">Antal linjer</th>
-                <th class="text-end">Sum (kr)</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-12 col-lg-6">
-    <div class="ba-card">
-      <div class="ba-card-body">
-        <h5 class="mb-3"><i class="bi bi-calendar3 me-2"></i>Pr. år</h5>
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0" id="yearTable">
-            <thead>
-              <tr>
-                <th>År</th>
-                <th class="text-end">Antal linjer</th>
-                <th class="text-end">Sum (kr)</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
+  <div class="col-12">
+    <div class="ba-card ba-chart-card">
+      <h6><i class="bi bi-bar-chart me-1"></i>Beløb pr. måned</h6>
+      <div class="ba-chart-canvas-wrap" style="height:280px"><canvas id="chartMonthly"></canvas></div>
     </div>
   </div>
 </div>
 
-<!-- Application table -->
-<div class="ba-card">
+<!-- Charts: status, zone, lokation -->
+<div class="row g-3 mb-3">
+  <div class="col-12 col-md-4">
+    <div class="ba-card ba-chart-card">
+      <h6><i class="bi bi-tags me-1"></i>Pr. status</h6>
+      <div class="ba-chart-canvas-wrap"><canvas id="chartStatus"></canvas></div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="ba-card ba-chart-card">
+      <h6><i class="bi bi-grid me-1"></i>Pr. zone</h6>
+      <div class="ba-chart-canvas-wrap"><canvas id="chartZone"></canvas></div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="ba-card ba-chart-card">
+      <h6><i class="bi bi-geo-alt me-1"></i>Pr. lokation</h6>
+      <div class="ba-chart-canvas-wrap"><canvas id="chartLokation"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- Top tilladelser -->
+<div class="ba-card mb-3">
   <div class="ba-card-body">
-    <h5 class="mb-3"><i class="bi bi-files me-2"></i>Ansøgninger – overblik</h5>
+    <h5 class="mb-3"><i class="bi bi-trophy me-2"></i>Top 10 tilladelser efter beløb</h5>
     <div class="table-responsive">
-      <table id="statistik-table"
-             class="table align-middle"
-             data-toggle="table"
-             data-pagination="true"
-             data-search="true"
-             data-search-time-out="350"
-             data-show-search-clear-button="true"
-             data-url="{{ url_for('udeservering.api_udeservering_statistik_table') }}"
-             data-page-size="25"
-             data-unique-id="Id">
+      <table class="table table-sm align-middle mb-0" id="topTable">
         <thead>
           <tr>
-            <th data-field="Id"               data-formatter="linkFormatter" data-sortable="true">Sag</th>
-            <th data-field="Firmanavn"        data-sortable="true">Firmanavn</th>
-            <th data-field="Adresse"          data-sortable="true">Adresse</th>
-            <th data-field="CVR"              data-sortable="true" data-formatter="cvrFormatter">CVR</th>
-            <th data-field="Serveringszone" data-sortable="true" data-formatter="zoneFormatter">Zone</th>
-            <th data-field="Lokation"        data-sortable="true" data-formatter="lokationFormatter">Lokation</th>
-            <th data-field="Serveringsareal"  data-sortable="true" data-formatter="arealFormatter"  class="text-end">Areal</th>
-            <th data-field="Facadelaengde"    data-sortable="true" data-formatter="facadeFormatter" class="text-end">Facade</th>
-            <th data-field="Periodetype"      data-sortable="true">Periode</th>
-            <th data-field="GaeldendeFra"     data-sortable="true" data-formatter="dateFormatter">Fra</th>
-            <th data-field="GaeldendeTilOgMed" data-sortable="true" data-formatter="dateFormatter">Til</th>
+            <th>Sag</th>
+            <th>Firmanavn</th>
+            <th>Adresse</th>
+            <th class="text-end">Linjer</th>
+            <th class="text-end">Sum (kr)</th>
           </tr>
         </thead>
+        <tbody></tbody>
       </table>
     </div>
   </div>
@@ -121,64 +159,228 @@
 
 {% block extra_js %}
 {{ super() }}
-
 <script>
-function fmtKr(n) {
-  return parseFloat(n || 0).toLocaleString("da-DK", { maximumFractionDigits: 0 }) + " kr";
+const STATUS_LABELS = {
+  "Ny": "Til godkendelse",
+  "TilFakturering": "Godkendt",
+  "Faktureret": "Faktureret",
+  "FakturerIkke": "Fakturer ikke",
+};
+
+const DA_MONTHS = ["Jan","Feb","Mar","Apr","Maj","Jun","Jul","Aug","Sep","Okt","Nov","Dec"];
+
+function fmtKr(n)  { return parseFloat(n || 0).toLocaleString("da-DK", { maximumFractionDigits: 0 }); }
+function fmtKr2(n) { return parseFloat(n || 0).toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmtN(n)   { return parseFloat(n || 0).toLocaleString("da-DK"); }
+
+/* ============================================================
+   Filter handling
+============================================================ */
+function buildParams() {
+  const params = new URLSearchParams();
+  const s = $("#filterSearch").val();
+  const y = $("#filterYear").val();
+  const m = $("#filterMonth").val();
+  const st = $("#filterStatus").val();
+  const z = $("#filterZone").val();
+  const l = $("#filterLokation").val();
+  if (s)  params.set("search", s);
+  if (y)  params.set("year", y);
+  if (m)  params.set("month", m);
+  if (st) params.set("status", st);
+  if (z)  params.set("zone", z);
+  if (l)  params.set("lokation", l);
+  return params;
 }
-function fmtN(n) {
-  return parseFloat(n || 0).toLocaleString("da-DK");
+
+async function refreshDashboard() {
+  const params = buildParams();
+  const r = await fetch("/udeservering/api/statistik/filtered?" + params.toString());
+  const d = await r.json();
+  renderKpis(d.kpi);
+  renderMonthly(d.monthly);
+  makeDonut("chartStatus",   "status",   d.per_status,   k => STATUS_LABELS[k] || k);
+  makeDonut("chartZone",     "zone",     d.per_zone);
+  makeDonut("chartLokation", "lokation", d.per_lokation);
+  renderTop(d.top_tilladelser);
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  fetch("{{ url_for('udeservering.api_udeservering_statistik_metrics') }}")
-    .then(r => r.json())
-    .then(data => {
-      const s = data.status  || {};
-      const t = data.totals  || {};
-      const sums = data.sums || {};
-
-      $("#kpiApps").text(fmtN(t.rows));
-      $("#kpiFirms").text(`${fmtN(t.firms)} unikke firmaer`);
-
-      $("#kpiNyCnt").text(fmtN(s.Ny));
-      $("#kpiNySum").text(fmtKr(sums.ny));
-
-      $("#kpiTilfaktCnt").text(fmtN(s.TilFakturering));
-      $("#kpiTilfaktSum").text(fmtKr(sums.tilfakturering));
-
-      $("#kpiFaktCnt").text(fmtN(s.Faktureret));
-      $("#kpiFaktSum").text(fmtKr(sums.faktureret));
-
-      const zoneTbody = $("#zoneTable tbody");
-      zoneTbody.empty();
-      (data.per_zone || []).forEach(r => {
-        zoneTbody.append(`
-          <tr>
-            <td>${zoneFormatter(r.Zone)}</td>
-            <td class="text-end ba-num">${fmtN(r.Cnt)}</td>
-            <td class="text-end ba-num">${fmtKr(r.SumPris)}</td>
-          </tr>`);
-      });
-      if (!(data.per_zone || []).length) {
-        zoneTbody.append(`<tr><td colspan="3" class="text-secondary text-center">Ingen data</td></tr>`);
-      }
-
-      const yearTbody = $("#yearTable tbody");
-      yearTbody.empty();
-      (data.per_year || []).forEach(r => {
-        yearTbody.append(`
-          <tr>
-            <td><strong>${r.Year}</strong></td>
-            <td class="text-end ba-num">${fmtN(r.Cnt)}</td>
-            <td class="text-end ba-num">${fmtKr(r.SumPris)}</td>
-          </tr>`);
-      });
-      if (!(data.per_year || []).length) {
-        yearTbody.append(`<tr><td colspan="3" class="text-secondary text-center">Ingen data</td></tr>`);
-      }
-    })
-    .catch(() => baToast("Kunne ikke hente statistik", "danger"));
+let searchTimer = null;
+$("#filterSearch").on("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(refreshDashboard, 350);
 });
+$("#filterYear, #filterMonth, #filterStatus, #filterZone, #filterLokation").on("change", refreshDashboard);
+
+$("#btnClearFilters").on("click", () => {
+  $("#filterSearch").val("");
+  $("#filterYear").val("");
+  $("#filterMonth").val("");
+  $("#filterStatus").val("");
+  $("#filterZone").val("");
+  $("#filterLokation").val("");
+  refreshDashboard();
+});
+
+$("#btnDownloadCsv").on("click", () => {
+  const params = buildParams();
+  // Use a real <a download> so the browser handles the file save dialog.
+  window.location.href = "/udeservering/api/statistik/csv?" + params.toString();
+});
+
+/* ============================================================
+   Renderers
+============================================================ */
+function renderKpis(k) {
+  $("#kpiLines").text(fmtN(k?.lines));
+  $("#kpiFirms").text(fmtN(k?.firms));
+  $("#kpiSum").text(fmtKr(k?.sum_pris) + " kr");
+  $("#kpiAvg").text(fmtKr2(k?.avg_pris) + " kr");
+}
+
+function renderTop(rows) {
+  const $tbody = $("#topTable tbody").empty();
+  if (!rows || rows.length === 0) {
+    $tbody.append(`<tr><td colspan="5" class="text-secondary text-center">Ingen data</td></tr>`);
+    return;
+  }
+  rows.forEach(r => {
+    $tbody.append(`
+      <tr>
+        <td>${linkFormatter("", { DeskproID: r.DeskproID })}</td>
+        <td>${r.Firmanavn || ""}</td>
+        <td>${r.Adresse || ""}</td>
+        <td class="text-end ba-num">${fmtN(r.count)}</td>
+        <td class="text-end ba-num">${fmtKr(r.sum)}&nbsp;kr</td>
+      </tr>`);
+  });
+}
+
+/* ============================================================
+   Charts (Chart.js)
+============================================================ */
+const charts = { monthly: null, status: null, zone: null, lokation: null };
+
+// Reuse the hue palette defined globally in common.html so the chart slices
+// match the chip colors used in the tables (same value → same hue everywhere).
+function _stHash(s) {
+  let h = 0;
+  for (let i = 0; i < (s || "").length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+function paletteFor(prefix, keys) {
+  return keys.map(k => `hsl(${CHIP_HUES[_stHash(prefix + k) % CHIP_HUES.length]}, 65%, 55%)`);
+}
+
+function isDark() {
+  return document.documentElement.getAttribute("data-bs-theme") === "dark";
+}
+
+function gridColor() { return isDark() ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.06)"; }
+function tickColor() { return isDark() ? "#9ca3af" : "#6b7280"; }
+
+const COMMON_TOOLTIP = {
+  callbacks: {
+    label(ctx) {
+      const v = ctx.parsed.y ?? ctx.parsed;
+      const sum = fmtKr(v) + " kr";
+      const lbl = ctx.label || ctx.dataset.label || "";
+      return `${lbl}: ${sum}`;
+    }
+  }
+};
+
+function renderMonthly(rows) {
+  // rows: [{key, year, month, count, sum}, ...] already sorted asc.
+  const labels = (rows || []).map(r => `${DA_MONTHS[r.month - 1]} ${String(r.year).slice(-2)}`);
+  const sums   = (rows || []).map(r => r.sum);
+  const counts = (rows || []).map(r => r.count);
+
+  if (charts.monthly) charts.monthly.destroy();
+  charts.monthly = new Chart(document.getElementById("chartMonthly"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: "Beløb (kr)",
+        data: sums,
+        backgroundColor: "hsl(220, 70%, 55%)",
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: items => items.length ? items[0].label : "",
+            label: ctx => `${fmtKr(ctx.parsed.y)} kr — ${fmtN(counts[ctx.dataIndex])} linjer`,
+          }
+        }
+      },
+      scales: {
+        x: { grid: { color: gridColor() }, ticks: { color: tickColor() } },
+        y: {
+          beginAtZero: true,
+          grid: { color: gridColor() },
+          ticks: { color: tickColor(), callback: v => fmtKr(v) },
+        }
+      }
+    }
+  });
+}
+
+function makeDonut(canvasElId, key, rows, labelFn) {
+  const keys   = (rows || []).map(r => r.key);
+  const sums   = (rows || []).map(r => r.sum);
+  const counts = (rows || []).map(r => r.count);
+  const labels = keys.map(k => labelFn ? labelFn(k) : k);
+  const palette = paletteFor(key + ":", keys);
+
+  if (charts[key]) charts[key].destroy();
+  charts[key] = new Chart(document.getElementById(canvasElId), {
+    type: "doughnut",
+    data: {
+      labels,
+      datasets: [{
+        data: sums,
+        backgroundColor: palette,
+        borderColor: isDark() ? "#161a21" : "#ffffff",
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: "62%",
+      plugins: {
+        legend: { position: "bottom", labels: { color: tickColor(), boxWidth: 12 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${labels[ctx.dataIndex]}: ${fmtKr(sums[ctx.dataIndex])} kr — ${fmtN(counts[ctx.dataIndex])} linjer`,
+          }
+        }
+      }
+    }
+  });
+}
+
+/* ============================================================
+   Init
+============================================================ */
+fetch("/udeservering/api/statistik/filter_options")
+  .then(r => r.json())
+  .then(d => {
+    d.years?.forEach(y => $("#filterYear").append(`<option value="${y}">${y}</option>`));
+    d.zones?.forEach(z => $("#filterZone").append(`<option value="${z}">${z}</option>`));
+    d.lokationer?.forEach(l => $("#filterLokation").append(`<option value="${l}">${l}</option>`));
+
+    // Default the year to current if present
+    const today = new Date();
+    if (d.years?.includes(today.getFullYear())) {
+      $("#filterYear").val(today.getFullYear());
+    }
+    refreshDashboard();
+  });
 </script>
 {% endblock %}

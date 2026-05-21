@@ -1,0 +1,176 @@
+{% extends "udeservering.html" %}
+
+{% block content %}
+<div class="ba-page-head">
+  <div>
+    <h1 class="ba-page-title"><i class="bi bi-files me-2"></i>Tilladelser</h1>
+    <p class="ba-page-sub">
+      Alle tilladelser til udeservering der er sendt til fakturering fra Deskpro.
+      Kun aktive vises som standard.
+    </p>
+  </div>
+</div>
+
+<div class="ba-filterbar">
+  <span class="ba-filterbar-label">Søg</span>
+  <input id="filterSearch" type="search" class="form-control form-control-sm"
+         style="width:220px" placeholder="Navn, adresse, CVR…">
+
+  <span class="ba-filterbar-label ms-2">Status</span>
+  <select id="filterStatus" class="form-select form-select-sm" style="width:150px">
+    <option value="aktive" selected>Kun aktive</option>
+    <option value="inaktive">Kun inaktive</option>
+    <option value="alle">Alle</option>
+  </select>
+
+  <span class="ba-filterbar-label ms-2">Zone</span>
+  <select id="filterZone" class="form-select form-select-sm" style="width:120px">
+    <option value="">Alle</option>
+  </select>
+
+  <span class="ba-filterbar-label ms-2">Lokation</span>
+  <select id="filterLokation" class="form-select form-select-sm" style="width:240px">
+    <option value="">Alle</option>
+  </select>
+
+  <span class="ba-filterbar-label ms-2">År</span>
+  <select id="filterYear" class="form-select form-select-sm" style="width:100px">
+    <option value="">Alle</option>
+  </select>
+
+  <span class="ba-filterbar-label ms-2">Måned</span>
+  <select id="filterMonth" class="form-select form-select-sm" style="width:130px">
+    <option value="">Alle</option>
+    <option>Januar</option><option>Februar</option><option>Marts</option><option>April</option>
+    <option>Maj</option><option>Juni</option><option>Juli</option><option>August</option>
+    <option>September</option><option>Oktober</option><option>November</option><option>December</option>
+  </select>
+
+  <button id="btnClearFilters" type="button" class="btn btn-sm btn-outline-secondary ms-2">
+    <i class="bi bi-x-circle me-1"></i>Nulstil
+  </button>
+
+  <div class="ba-spacer"></div>
+  <span id="filterStatusText" class="text-secondary small"></span>
+</div>
+
+<div class="ba-card">
+  <div class="ba-card-body p-0">
+    <table id="applications-table"
+      class="table align-middle"
+      data-toggle="table"
+      data-pagination="true"
+      data-side-pagination="server"
+      data-url="{{ url_for('udeservering.api_udeservering_applications') }}"
+      data-page-size="25"
+      data-page-list="[10, 25, 50, 100, All]"
+      data-sort-name="Id"
+      data-sort-order="desc"
+      data-unique-id="Id"
+      data-total-field="total"
+      data-data-field="rows">
+      <thead>
+        <tr>
+          <th data-field="Id"                data-sortable="true" data-formatter="linkFormatter">Sag</th>
+          <th data-field="Firmanavn"         data-sortable="true" data-formatter="firmanavnSaesonFormatter">Firmanavn</th>
+          <th data-field="Att"               data-sortable="true">Att.</th>
+          <th data-field="Adresse"           data-sortable="true">Adresse</th>
+          <th data-field="CVR"               data-sortable="true" data-formatter="cvrFormatter">CVR</th>
+          <th data-field="Serveringszone"   data-sortable="true" data-formatter="zoneFormatter">Zone</th>
+          <th data-field="Lokation"          data-sortable="true" data-formatter="lokationFormatter">Lokation</th>
+          <th data-field="Sommersaeson"      data-sortable="true" data-formatter="sommerFormatter" class="text-center">Sommer</th>
+          <th data-field="Vintermaaneder"    data-sortable="true">Vintermåneder</th>
+          <th data-field="Serveringsareal"   data-sortable="true" data-formatter="arealFormatter"  class="text-end">Areal</th>
+          <th data-field="Facadelaengde"     data-sortable="true" data-formatter="facadeFormatter" class="text-end">Facade</th>
+          <th data-field="GaeldendeFra"      data-sortable="true" data-formatter="dateFormatter">Fra</th>
+          <th data-field="GaeldendeTilOgMed" data-sortable="true" data-formatter="dateFormatter">Til</th>
+          <th data-field="Ansogningsdato"    data-sortable="true" data-formatter="dateFormatter">Indsendt</th>
+        </tr>
+      </thead>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+  /* Firmanavn cell — adds a small red triangle when the tilladelse has no
+     sæson selected (Sommer != "Ja" AND no Vintermaaneder). Mirrors the CVR
+     warning pattern. */
+  function firmanavnSaesonFormatter(value, row) {
+    const name = $("<div>").text(value || "").html();
+    if (!row) return name;
+    const hasSommer = (row.Sommersaeson === "Ja");
+    const hasVinter = !!row.Vintermaaneder;
+    if (hasSommer || hasVinter) return name;
+    const warn = `<i class="bi bi-exclamation-triangle-fill text-danger ms-2"
+                    title="Ingen sæson valgt — ingen fakturalinjer genereres. Ret Sommer-/Vintersæson på ansøgningen i Deskpro."></i>`;
+    return `${name}${warn}`;
+  }
+
+  function applyFilters() {
+    const search   = $("#filterSearch").val();
+    const status   = $("#filterStatus").val();
+    const zone     = $("#filterZone").val();
+    const lokation = $("#filterLokation").val();
+    const year     = $("#filterYear").val();
+    const month    = $("#filterMonth").val();
+
+    const params = new URLSearchParams();
+    if (search)   params.set("search", search);
+    if (status)   params.set("filter", status);
+    if (zone)     params.set("zone", zone);
+    if (lokation) params.set("lokation", lokation);
+    if (year)     params.set("year", year);
+    if (month)    params.set("month", month);
+
+    const url = "{{ url_for('udeservering.api_udeservering_applications') }}" +
+                (params.toString() ? "?" + params.toString() : "");
+
+    $("#applications-table").bootstrapTable("refresh", { url });
+
+    const parts = [];
+    if (status === "aktive")   parts.push("kun aktive");
+    if (status === "inaktive") parts.push("kun inaktive");
+    if (zone)     parts.push(`zone ${zone}`);
+    if (lokation) parts.push(lokation);
+    if (year)     parts.push(year);
+    if (month)    parts.push(month);
+    $("#filterStatusText").text(parts.length ? "Filter: " + parts.join(" · ") : "");
+  }
+
+  $("#filterStatus, #filterZone, #filterLokation, #filterYear, #filterMonth").on("change", applyFilters);
+
+  let searchTimer = null;
+  $("#filterSearch").on("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(applyFilters, 350);
+  });
+
+  $("#btnClearFilters").on("click", () => {
+    $("#filterSearch").val("");
+    $("#filterStatus").val("aktive");
+    $("#filterZone").val("");
+    $("#filterLokation").val("");
+    $("#filterYear").val("");
+    $("#filterMonth").val("");
+    applyFilters();
+  });
+
+  // Populate dropdowns
+  fetch("/udeservering/api/applications/filters")
+    .then(r => r.json())
+    .then(d => {
+      d.zones?.forEach(z => $("#filterZone").append(`<option value="${z}">${z}</option>`));
+      d.lokationer?.forEach(l => $("#filterLokation").append(`<option value="${l}">${l}</option>`));
+    });
+
+  // Years from the fakturalinjer endpoint (same year set used elsewhere)
+  fetch("/udeservering/api/fakturering/year_options")
+    .then(r => r.json())
+    .then(d => {
+      d.years?.forEach(y => $("#filterYear").append(`<option value="${y}">${y}</option>`));
+    });
+</script>
+{% endblock %}

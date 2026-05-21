@@ -45,6 +45,11 @@
           </div>
 
           <div class="col-md-9">
+            <label class="form-label small text-secondary mb-1">Att.</label>
+            <input class="form-control" id="edit-Att" disabled>
+          </div>
+
+          <div class="col-md-12">
             <label class="form-label small text-secondary mb-1">Adresse</label>
             <input class="form-control" id="edit-Adresse" disabled>
           </div>
@@ -86,10 +91,7 @@
       </div>
 
       <div class="modal-footer">
-        <button id="btnResetData"      class="btn btn-outline-warning me-auto">
-          <i class="bi bi-arrow-counterclockwise me-1"></i>Slet & gendan
-        </button>
-        <button id="btnFakturerIkke"   class="btn btn-outline-danger">
+        <button id="btnFakturerIkke"   class="btn btn-outline-danger me-auto">
           <i class="bi bi-slash-circle me-1"></i>Fakturer ikke
         </button>
         <button id="btnSendTilFakturering" class="btn btn-success">
@@ -101,7 +103,7 @@
         <small class="text-secondary">
           <i class="bi bi-info-circle me-1"></i>
           Ændringer i grunddata (firmanavn, areal, lokation, mv.) skal foretages i Deskpro.
-          Næste synkronisering opdaterer linjen her. Godkendelse låser linjen permanent.
+          Næste synkronisering opdaterer linjen her. Godkendelse låser linjen så opdateringer i Deskpro ikke påvirker den.
         </small>
       </div>
 

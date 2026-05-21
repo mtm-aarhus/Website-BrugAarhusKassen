@@ -57,7 +57,7 @@
           <thead>
             <tr>
               <th data-field="Noegle"        data-sortable="true">Parameter</th>
-              <th data-field="VaerdiDecimal" data-sortable="true" class="text-end">Værdi</th>
+              <th data-field="VaerdiDecimal" data-sortable="true" data-formatter="paramVaerdiFormatter" class="text-end">Værdi</th>
               <th data-field="VaerdiTekst"   data-sortable="true">Beskrivelse</th>
               <th data-field="action"        data-formatter="paramEditFormatter" class="text-end">Handling</th>
             </tr>
@@ -258,6 +258,14 @@ function saesonEditFormatter(_, row) {
 function kvmPriceFormatter(value) {
   if (value === null || value === undefined || value === "") return "";
   return `<span class="ba-num">${parseFloat(value).toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kr/m²</span>`;
+}
+/* Show parameter values with at most 2 decimal places, padded with trailing
+   zeros to exactly 2 (so 2000 → "2.000,00" and 0,8 → "0,80"). */
+function paramVaerdiFormatter(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const n = parseFloat(value);
+  if (isNaN(n)) return value;
+  return `<span class="ba-num">${n.toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`;
 }
 function saesonFormatter(value) {
   if (value === "Sommer") return `<span class="ba-chip ba-chip-aktiv">Sommer</span>`;

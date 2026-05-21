@@ -1,0 +1,22 @@
+Fjerner fortløbende/tidsbegrænset felt, gældende fra/til dato er tilstrækkelig og fortæller hele historien
+Kun gælder fra/gælder til, hvis ingen gælder til så er den i princippet uendelig (men generer kun x antal år af gangen)
+ATT: Ansøger
+Fjern "slet og opret igen" knappen i til godkendelse, ikke relevant længere når vi genopfrisker dem i robotprocessen.
+Vis kommentarfeltet på fakturer ikke/til godkendelse/faktureret
+Omdøb ansøgninger til tilladelser, og tilføj filtre til tidsperiode (år/måned)
+hvis linjen er 0 kroner, skjul den i til godkendelse, men tilføj et filter til at vise "linjer til 0 kroner"
+Generer 6 måneder af gangen
+Zone bliver kun 1 og 2 i fremtiden, det blive rettet i deskpro og i sql når vi er klar.
+I til godkendelse, hvis kun indeværende måned + overskredne linjer (altså hvor måneden er passeret) som standard, men giv så mulighed for at ændre visning til år/måned, jeg tænker ikke at man kan begge samtidigt.
+
+PÅ faktura - Tag fat i økonomi:
+Informer om parklet, hvilken måned, udregning, osv.
+Kontakt: Tilladelse og arrangementer
+Kan man indsætte mail under kontakt/telefonnummer? Indsæt mailadresse i beskrivelsen på faktura som minimum
+
+
+Til konvertering
+1a/b/c = 1
+2 = 2
+0 i cvr nummer = ikke aktive længere
+

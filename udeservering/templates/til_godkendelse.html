@@ -36,24 +36,42 @@
   </div>
 </div>
 
-<!-- Filter bar (search lives here, not in the bootstrap-table toolbar) -->
+<!-- Filter bar -->
 <div class="ba-filterbar">
   <span class="ba-filterbar-label">Søg</span>
   <input id="filterSearch" type="search" class="form-control form-control-sm"
          style="width:220px" placeholder="Navn, adresse, CVR…">
 
-  <span class="ba-filterbar-label ms-2">År</span>
-  <select id="filterYear" class="form-select form-select-sm" style="width:110px">
-    <option value="">Alle</option>
-  </select>
+  <span class="ba-filterbar-label ms-2">Periode</span>
+  <div class="btn-group btn-group-sm" role="group" id="periodeMode">
+    <input type="radio" class="btn-check" name="pm" id="pmDefault" value="default" checked>
+    <label class="btn btn-outline-secondary" for="pmDefault"
+           title="Vis linjer for indeværende måned og alle overskredne måneder">
+      <i class="bi bi-hourglass-split me-1"></i>Aktuelle &amp; forfaldne
+    </label>
 
-  <span class="ba-filterbar-label ms-2">Måned</span>
-  <select id="filterMonth" class="form-select form-select-sm" style="width:130px">
-    <option value="">Alle</option>
-    <option>Januar</option><option>Februar</option><option>Marts</option><option>April</option>
-    <option>Maj</option><option>Juni</option><option>Juli</option><option>August</option>
-    <option>September</option><option>Oktober</option><option>November</option><option>December</option>
-  </select>
+    <input type="radio" class="btn-check" name="pm" id="pmPick" value="pick">
+    <label class="btn btn-outline-secondary" for="pmPick"
+           title="Filtrér på et specifikt år og/eller måned">
+      <i class="bi bi-calendar-range me-1"></i>Vælg år/måned…
+    </label>
+  </div>
+
+  <!-- Year/month dropdowns appear only when "Vælg år/måned…" is selected. -->
+  <div id="pmPickFields" class="d-none align-items-center" style="gap:.5rem">
+    <span class="ba-filterbar-label">År</span>
+    <select id="filterYear" class="form-select form-select-sm" style="width:100px">
+      <option value="">Alle</option>
+    </select>
+
+    <span class="ba-filterbar-label ms-1">Måned</span>
+    <select id="filterMonth" class="form-select form-select-sm" style="width:130px">
+      <option value="">Alle</option>
+      <option>Januar</option><option>Februar</option><option>Marts</option><option>April</option>
+      <option>Maj</option><option>Juni</option><option>Juli</option><option>August</option>
+      <option>September</option><option>Oktober</option><option>November</option><option>December</option>
+    </select>
+  </div>
 
   <span class="ba-filterbar-label ms-2">Zone</span>
   <select id="filterZone" class="form-select form-select-sm" style="width:120px">
@@ -64,6 +82,11 @@
   <select id="filterLokation" class="form-select form-select-sm" style="width:240px">
     <option value="">Alle</option>
   </select>
+
+  <div class="form-check form-switch ms-2" title="Vis afgiftsfrie fakturalinjer (pris beregnet til 0 kr)">
+    <input class="form-check-input" type="checkbox" id="toggleShowZero">
+    <label class="form-check-label small" for="toggleShowZero">Vis afgiftsfrie linjer</label>
+  </div>
 
   <button id="btnClearFilters" type="button" class="btn btn-sm btn-outline-secondary ms-2">
     <i class="bi bi-x-circle me-1"></i>Nulstil
@@ -81,7 +104,7 @@
   </div>
 </div>
 
-<!-- Floating bulk-action bar (appears only when selection > 0) -->
+<!-- Floating bulk-action bar -->
 <div id="bulkBar" class="ba-bulkbar">
   <span class="ba-bulkbar-count"><span id="bulkCount">0</span> linje(r) markeret</span>
   <button id="btnBulkGodkend" class="btn btn-success btn-sm">
@@ -104,7 +127,7 @@
       data-pagination="true"
       data-side-pagination="server"
       data-sort-name="FakturaDatoSort"
-      data-sort-order="desc"
+      data-sort-order="asc"
       data-url="{{ url_for('udeservering.api_fakturering') }}"
       data-page-size="25"
       data-page-list="[10, 25, 50, 100, All]"
@@ -124,6 +147,7 @@
           <th data-field="Serveringsareal" data-sortable="true" data-formatter="arealFormatter"  class="text-end">Areal</th>
           <th data-field="Facadelaengde"   data-sortable="true" data-formatter="facadeFormatter" class="text-end">Facade</th>
           <th data-field="Pris"            data-sortable="true" data-formatter="priceFormatter"  class="text-end">Pris (auto)</th>
+          <th data-field="Kommentar"       data-formatter="kommentarFormatter">Kommentar</th>
         </tr>
       </thead>
     </table>
@@ -150,23 +174,42 @@ let groupedPage = 1;
 let cachedGroups = [];
 
 /* ============================================================
-   Filters / URL
+   Filter / URL
 ============================================================ */
+function periodeMode() {
+  return $("input[name='pm']:checked").val() || "default";
+}
+
 function buildFakturaUrl(extra = {}) {
   const params = new URLSearchParams();
   params.set("status", STATUS);
 
   const s = $("#filterSearch").val();
-  const y = $("#filterYear").val();
-  const m = $("#filterMonth").val();
   const z = $("#filterZone").val();
   const l = $("#filterLokation").val();
 
   if (s) params.set("search", s);
-  if (y) params.set("year", y);
-  if (m) params.set("month", m);
   if (z) params.set("zone", z);
   if (l) params.set("lokation", l);
+
+  // Period mode
+  if (periodeMode() === "default") {
+    params.set("period_filter", "current_and_earlier");
+  } else {
+    const y = $("#filterYear").val();
+    const m = $("#filterMonth").val();
+    if (y) params.set("year", y);
+    if (m) params.set("month", m);
+  }
+
+  // Hide-zero is the default; only send hide_zero=0 to opt out.
+  if (!$("#toggleShowZero").is(":checked")) {
+    params.set("hide_zero", "1");
+  }
+
+  // Default sort = oldest first (most overdue at the top).
+  params.set("sort", "FakturaDatoSort");
+  params.set("order", "asc");
 
   Object.entries(extra).forEach(([k, v]) => params.set(k, v));
 
@@ -190,7 +233,27 @@ function applyFilters() {
   if (currentView() === "group") loadGrouped();
 }
 
+/* Periode-mode toggle: show/hide the year+month dropdowns wholesale.
+   When "Aktuelle & forfaldne" is selected, the dropdowns are removed from
+   the layout entirely and their values are reset so the URL stays clean. */
+function updatePeriodeModeUi() {
+  const isPick = (periodeMode() === "pick");
+  const $box = $("#pmPickFields");
+  if (isPick) {
+    $box.removeClass("d-none").addClass("d-flex");
+  } else {
+    $box.removeClass("d-flex").addClass("d-none");
+    $("#filterYear").val("");
+    $("#filterMonth").val("");
+  }
+}
+$("input[name='pm']").on("change", () => {
+  updatePeriodeModeUi();
+  applyFilters();
+});
+
 $("#filterYear, #filterMonth, #filterZone, #filterLokation").on("change", applyFilters);
+$("#toggleShowZero").on("change", applyFilters);
 
 // Debounced search
 let searchTimer = null;
@@ -205,23 +268,20 @@ $("#btnClearFilters").on("click", () => {
   $("#filterMonth").val("");
   $("#filterZone").val("");
   $("#filterLokation").val("");
+  $("#toggleShowZero").prop("checked", false);
+  $("#pmDefault").prop("checked", true);
+  updatePeriodeModeUi();
   applyFilters();
 });
 
-// Default to current year
-const today = new Date();
-const currentYear = today.getFullYear();
-
+// Populate dropdowns + initial load
 fetch("/udeservering/api/fakturering/year_options")
   .then(r => r.json())
   .then(d => {
     d.years?.forEach(y => $("#filterYear").append(`<option value="${y}">${y}</option>`));
     d.zones?.forEach(z => $("#filterZone").append(`<option value="${z}">${z}</option>`));
     d.lokationer?.forEach(l => $("#filterLokation").append(`<option value="${l}">${l}</option>`));
-
-    if (d.years?.includes(currentYear)) {
-      $("#filterYear").val(currentYear);
-    }
+    updatePeriodeModeUi();
     applyFilters();
   });
 
@@ -266,9 +326,6 @@ $("#btnBulkClear").on("click", e => {
   updateBulkBar();
 });
 
-// Flat-view pagination guard: warn before losing selection
-installPaginationGuard("#fakturering-table", () => getSelectedIds(), updateBulkBar);
-
 /* ============================================================
    View toggle
 ============================================================ */
@@ -305,7 +362,8 @@ async function loadGrouped() {
     (groups[key] = groups[key] || { key, label, rows: [] }).rows.push(row);
   });
 
-  cachedGroups = Object.keys(groups).sort().reverse().map(k => groups[k]);
+  // Oldest month first (so most-overdue is at the top).
+  cachedGroups = Object.keys(groups).sort().map(k => groups[k]);
   groupedPage = 1;
   renderGroupedPage();
 }
@@ -330,12 +388,17 @@ function renderGroupedPage() {
       const lockable = cvrOk === false
         ? `<span class="ms-1" title="Ugyldigt CVR — kan ikke godkendes"><i class="bi bi-exclamation-triangle-fill text-danger"></i></span>`
         : "";
+      const kommentar = r.Kommentar
+        ? `<span class="d-inline-block text-truncate" style="max-width:200px"
+                  title="${$('<div>').text(r.Kommentar).html()}">${$('<div>').text(r.Kommentar).html()}</span>`
+        : "";
       return `
       <tr>
         <td class="text-center">
           <input type="checkbox" class="form-check-input row-check"
                  data-id="${r.FakturaLinjeID}" data-group="${g.key}"
-                 data-cvr-ok="${cvrOk === false ? '0' : '1'}">
+                 data-cvr-ok="${cvrOk === false ? '0' : '1'}"
+                 data-pris="${r.Pris == null ? '' : r.Pris}">
         </td>
         <td class="text-center">${editFormatter("", r)}</td>
         <td>${linkFormatter("", r)}</td>
@@ -346,6 +409,7 @@ function renderGroupedPage() {
         <td class="text-end">${arealFormatter(r.Serveringsareal)}</td>
         <td class="text-end">${facadeFormatter(r.Facadelaengde)}</td>
         <td class="text-end">${priceFormatter(r.Pris)}</td>
+        <td>${kommentar}</td>
       </tr>`;
     }).join("");
 
@@ -376,6 +440,7 @@ function renderGroupedPage() {
                 <th class="text-end">Areal</th>
                 <th class="text-end">Facade</th>
                 <th class="text-end">Pris (auto)</th>
+                <th>Kommentar</th>
               </tr>
             </thead>
             <tbody>${rowsHtml}</tbody>
@@ -413,23 +478,8 @@ function renderGroupedPage() {
   updateBulkBar();
 }
 
-// Grouped pagination buttons (with selection guard)
-async function changeGroupedPage(newPage) {
-  if (newPage === groupedPage) return;
-  const ids = getSelectedIds();
-  if (ids.length > 0) {
-    const ok = await baConfirm(
-      `Du har <strong>${ids.length}</strong> linje(r) markeret. Skift side alligevel?<br><span class="text-secondary small">Markeringen ryddes.</span>`,
-      { title: "Skift side", okLabel: "Skift side", variant: "warning", icon: "bi-exclamation-triangle" }
-    );
-    if (!ok) return;
-  }
-  groupedPage = newPage;
-  renderGroupedPage();
-}
-
-$(document).on("click", "#pgPrev", () => changeGroupedPage(groupedPage - 1));
-$(document).on("click", "#pgNext", () => changeGroupedPage(groupedPage + 1));
+$(document).on("click", "#pgPrev", () => { groupedPage = Math.max(1, groupedPage - 1); renderGroupedPage(); });
+$(document).on("click", "#pgNext", () => { groupedPage++; renderGroupedPage(); });
 
 /* Checkbox interactions */
 $(document).on("click", "#groupContainer .row-check", e => e.stopPropagation());
@@ -465,6 +515,26 @@ window.editEvents = {
   }
 };
 
+/* Re-evaluate whether the Godkend button should be enabled.
+   Two gates apply:
+   - CVR must pass the Danish mod-11 check
+   - Computed pris (the auto-calculated value in the modal) must be > 0 */
+function updateGodkendButtonState() {
+  const cvrVal = document.getElementById("edit-CVR").value;
+  const cvrOk = cvrVal ? isValidCvr(cvrVal) : false;
+  const prisRaw = document.getElementById("edit-Pris").value;
+  const prisNum = parseFloat(prisRaw);
+  const prisOk = !isNaN(prisNum) && prisNum > 0;
+
+  let reason = null;
+  if (!cvrOk)       reason = "CVR mangler eller er ugyldigt — kan ikke godkendes. Ret i Deskpro og synkronisér.";
+  else if (!prisOk) reason = "Pris er 0 eller negativ — afgiftsfri linjer kan ikke godkendes. Brug \"Fakturer ikke\" i stedet.";
+
+  const godkendBtn = document.getElementById("btnSendTilFakturering");
+  godkendBtn.disabled = !!reason;
+  godkendBtn.title = reason || "";
+}
+
 function openEditModal(id) {
   fetch(`/udeservering/api/fakturering/${id}`)
     .then(r => r.json())
@@ -486,6 +556,8 @@ function openEditModal(id) {
       document.getElementById("edit-Adresse").value = d.Adresse || "";
       document.getElementById("edit-Firmanavn").value = d.Firmanavn || "";
       document.getElementById("edit-CVR").value = d.CVR || "";
+      const attEl = document.getElementById("edit-Att");
+      if (attEl) attEl.value = d.Att || "";
 
       const cvrStatus = document.getElementById("edit-CVR-status");
       const cvrOk = !d.CVR ? null : isValidCvr(d.CVR);
@@ -499,17 +571,17 @@ function openEditModal(id) {
         cvrStatus.innerHTML = `<i class="bi bi-exclamation-triangle-fill text-danger"></i>`;
         cvrStatus.title = "Ugyldigt CVR-nummer (mod-11 check fejler)";
       }
-      const godkendBtn = document.getElementById("btnSendTilFakturering");
-      godkendBtn.disabled = (cvrOk !== true);
-      godkendBtn.title = (cvrOk !== true)
-        ? "CVR mangler eller er ugyldigt — kan ikke godkendes. Ret i Deskpro og synkronisér."
-        : "";
+      updateGodkendButtonState();
 
       document.getElementById("edit-Serveringsareal").value = d.Serveringsareal ?? "";
       document.getElementById("edit-Facadelaengde").value   = d.Facadelaengde ?? "";
       document.getElementById("edit-Kommentar").value       = d.Kommentar ?? "";
 
-      const showFacade = (d.Lokation === "Ved facade");
+      // Facade titles all start with a unique prefix, so startsWith is
+      // enough to distinguish. Handles both the new title
+      // ("Facade og nærliggende areal") and the legacy one ("Ved facade,…").
+      const txt = (d.Lokation || "").trim().toLowerCase();
+      const showFacade = txt.startsWith("facade") || txt.startsWith("ved facade");
       document.getElementById("facade-container").style.display = showFacade ? "" : "none";
       if (!showFacade) document.getElementById("edit-Facadelaengde").value = "";
 
@@ -578,12 +650,30 @@ function selectionHasInvalidCvr() {
   return sel.some(r => !isValidCvr(r.CVR));
 }
 
+function selectionHasNonPositivePris() {
+  if (currentView() === "group") {
+    return $("#groupContainer .row-check:checked").toArray().some(cb => {
+      const p = parseFloat($(cb).data("pris"));
+      return isNaN(p) || p <= 0;
+    });
+  }
+  const sel = $("#fakturering-table").bootstrapTable("getSelections");
+  return sel.some(r => {
+    const p = parseFloat(r.Pris);
+    return isNaN(p) || p <= 0;
+  });
+}
+
 document.getElementById("btnBulkGodkend").addEventListener("click", async () => {
   const ids = getSelectedIds();
   if (ids.length === 0) return baToast("Vælg mindst én linje først", "warning");
 
   if (selectionHasInvalidCvr()) {
     return baToast("Mindst én markeret linje har ugyldigt CVR — kan ikke godkendes. Ret i Deskpro først.", "danger");
+  }
+
+  if (selectionHasNonPositivePris()) {
+    return baToast("Mindst én markeret linje er afgiftsfri (pris 0 eller negativ) — brug \"Fakturer ikke\" i stedet.", "danger");
   }
 
   const ok = await baConfirm(
@@ -644,6 +734,7 @@ async function updateModalPrice() {
   const json = await response.json();
   if (!json.success) return;
   document.getElementById("edit-Pris").value = json.data.belob;
+  updateGodkendButtonState();
 }
 
 function extractMonthNumber(str) {
@@ -653,28 +744,6 @@ function extractMonthNumber(str) {
 
 ["edit-Serveringsareal", "edit-Facadelaengde"].forEach(id => {
   document.getElementById(id).addEventListener("input", updateModalPrice);
-});
-
-document.getElementById("btnResetData").addEventListener("click", async () => {
-  const id = document.getElementById("edit-FakturaLinjeID").value;
-  const ok = await baConfirm(
-    "Dette sletter fakturalinjen og gendanner den med opdateret data fra BrugAarhus ved næste synkronisering.",
-    { title: "Slet & gendan", okLabel: "Slet", variant: "warning", icon: "bi-arrow-counterclockwise" }
-  );
-  if (!ok) return;
-
-  fetch("/udeservering/api/fakturering/reset", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({ FakturaLinjeID: id })
-  })
-  .then(r => r.json())
-  .then(j => {
-    if (!j.success) return baToast(j.error || "Fejl", "danger");
-    baToast("Linje slettet — gendannes ved næste synkronisering", "primary");
-    refreshActiveView();
-    bootstrap.Modal.getInstance(document.getElementById("faktureringModal")).hide();
-  });
 });
 </script>
 {% endblock %}
